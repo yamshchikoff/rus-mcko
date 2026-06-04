@@ -117,7 +117,7 @@
 <script>
 // ── Chat state ──────────────────────────────────────────────────────────────
 
-const CHAT_HISTORY_KEY_PREFIX = 'vpr-chat-';
+const CHAT_HISTORY_KEY = 'vpr-chat';
 const MAX_CHAT_MESSAGES = 100;
 
 let chatMessages = [];
@@ -152,22 +152,19 @@ function saveApiKey() {
 
 // ── Chat history persistence ────────────────────────────────────────────────
 
-function loadChatHistory(vNum) {
-  const key = CHAT_HISTORY_KEY_PREFIX + vNum;
+function loadChatHistory() {
   try {
-    return JSON.parse(localStorage.getItem(key)) || [];
+    return JSON.parse(localStorage.getItem(CHAT_HISTORY_KEY)) || [];
   } catch {
     return [];
   }
 }
 
-function saveChatHistory(vNum) {
-  const key = CHAT_HISTORY_KEY_PREFIX + (vNum || 0);
-  // Keep last N messages
+function saveChatHistory() {
   if (chatMessages.length > MAX_CHAT_MESSAGES) {
     chatMessages = chatMessages.slice(-MAX_CHAT_MESSAGES);
   }
-  localStorage.setItem(key, JSON.stringify(chatMessages));
+  localStorage.setItem(CHAT_HISTORY_KEY, JSON.stringify(chatMessages));
 }
 
 // ── Build tutor context ─────────────────────────────────────────────────────
@@ -278,7 +275,7 @@ function appendAssistantMessage(content) {
   chatMessages.push(msg);
   const el = document.getElementById('chat-messages');
   el.appendChild(renderChatMessage(msg));
-  saveChatHistory(currentVariant);
+  saveChatHistory();
   scrollChatToBottom();
 }
 
@@ -287,7 +284,7 @@ function appendUserMessage(content) {
   chatMessages.push(msg);
   const el = document.getElementById('chat-messages');
   el.appendChild(renderChatMessage(msg));
-  saveChatHistory(currentVariant);
+  saveChatHistory();
   scrollChatToBottom();
 }
 
@@ -422,6 +419,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const data = await resp.json();
     variants = data.variants;
+    chatMessages = loadChatHistory();
+    renderChatHistory();
     populateSelector();
   } catch (e) {
     document.getElementById('content').innerHTML =
@@ -454,11 +453,7 @@ function showVariant(num) {
   currentVariant = num;
   startTimer();
 
-  // Load chat history for this variant; keep current if none yet
-  const saved = loadChatHistory(num);
-  if (saved.length > 0) {
-    chatMessages = saved;
-  }
+  chatMessages = loadChatHistory();
   renderChatHistory();
 
   const t1 = v.tasks.find(t => t.issue === 1);
