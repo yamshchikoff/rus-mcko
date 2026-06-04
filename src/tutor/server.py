@@ -279,10 +279,6 @@ class TutorHandler(BaseHTTPRequestHandler):
         progress_context = payload.get("progressContext", "")
         current_task = payload.get("currentTask", "")
 
-        logger.info("CHAT: progress_context=%r, current_task=%r, messages=%d",
-                    progress_context[:100] if progress_context else "",
-                    current_task, len(messages))
-
         if not api_key:
             self.send_error(400, "apiKey is required")
             return
