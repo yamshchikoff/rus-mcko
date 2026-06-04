@@ -172,33 +172,39 @@ function saveChatHistory(vNum) {
 
 // ── Build tutor context ─────────────────────────────────────────────────────
 
-function buildTutorContext(vNum) {
+function buildTutorContext() {
   const ctx = [];
 
-  // Current task info
-  if (currentVariant) {
-    ctx.push('Вариант ' + currentVariant);
-    const v = variants.find(x => x.num === currentVariant);
-    if (v) {
-      ctx.push('Задания:\n');
-      v.tasks.forEach(t => {
-        const div = document.createElement('div');
-        div.innerHTML = t.content_html;
-        const text = div.textContent.trim().substring(0, 300);
-        ctx.push('К' + t.issue + '. ' + t.category + ': ' + text);
-      });
-    }
-  }
-
-  // Progress
+  // Progress always — from localStorage, independent of variant selection
   const prog = loadProgress();
-  if (Object.keys(prog).length > 0) {
-    ctx.push('\nПрогресс:');
+  const completed = Object.keys(prog).length;
+  if (completed > 0) {
+    ctx.push('Выполнено вариантов: ' + completed);
+    ctx.push('Прогресс:');
     for (const [vn, p] of Object.entries(prog)) {
       const scores = p.scores || {};
       const scoreStr = Object.entries(scores).map(([issue, s]) => 'К' + issue + '=' + s).join(', ');
       ctx.push('  Вариант ' + vn + ': ' + scoreStr);
     }
+  } else {
+    ctx.push('Пока нет выполненных вариантов.');
+  }
+
+  // Current task info — only if a variant is selected
+  if (currentVariant) {
+    ctx.push('\nТекущий вариант: ' + currentVariant);
+    const v = variants.find(x => x.num === currentVariant);
+    if (v) {
+      ctx.push('Задания:');
+      v.tasks.forEach(t => {
+        const div = document.createElement('div');
+        div.innerHTML = t.content_html;
+        const text = div.textContent.trim().substring(0, 200);
+        ctx.push('  К' + t.issue + '. ' + t.category + ': ' + text);
+      });
+    }
+  } else {
+    ctx.push('\nВариант не выбран.');
   }
 
   return ctx.join('\n');
@@ -320,7 +326,7 @@ async function sendChatMessage() {
           role: m.role,
           content: m.content
         })),
-        progressContext: currentVariant ? buildTutorContext(currentVariant) : '',
+        progressContext: buildTutorContext(),
         currentTask: currentVariant ? 'Вариант ' + currentVariant : '',
       }),
     });
