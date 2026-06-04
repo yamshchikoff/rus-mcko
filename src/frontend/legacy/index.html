@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Тренажёр ВПР — Русский язык, 7 класс</title>
+<link rel="stylesheet" href="sdamgia.css"/>
+</head>
+<body>
+
+<header>
+  <h1>Тренажёр ВПР по русскому языку</h1>
+  <p>7 класс · 15 вариантов · формат 2026 года</p>
+</header>
+
+<div class="variant-selector">
+  <label for="variant-select">Вариант:</label>
+  <select id="variant-select">
+    <option value="">— Выберите вариант —</option>
+  </select>
+</div>
+
+<main id="content">
+  <div class="loading">Загрузка вариантов...</div>
+</main>
+
+<footer>
+  Тренажёр ВПР · Русский язык 7 класс · Данные: rus7-vpr.sdamgia.ru
+</footer>
+
+<script>
+const DATA_URL = '../../data/vpr/variants.json';
+
+let variants = [];
+
+document.addEventListener('DOMContentLoaded', async () => {
+  try {
+    const resp = await fetch(DATA_URL);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    variants = data.variants;
+    populateSelector();
+  } catch (e) {
+    document.getElementById('content').innerHTML =
+      `<div class="error">Ошибка загрузки вариантов: ${e.message}<br>
+       Убедитесь, что сервер запущен из корня проекта:<br>
+       <code>python3 -m http.server 8080</code></div>`;
+  }
+});
+
+function populateSelector() {
+  const sel = document.getElementById('variant-select');
+  variants.forEach(v => {
+    const opt = document.createElement('option');
+    opt.value = v.num;
+    opt.textContent = `Вариант ${v.num}`;
+    sel.appendChild(opt);
+  });
+  sel.addEventListener('change', () => {
+    if (sel.value) showVariant(parseInt(sel.value));
+  });
+  document.getElementById('content').innerHTML =
+    '<div class="loading">Выберите вариант, чтобы начать</div>';
+}
+
+function showVariant(num) {
+  const v = variants.find(x => x.num === num);
+  if (!v) return;
+
+  const t1 = v.tasks.find(t => t.issue === 1);
+  const tasks14 = v.tasks.filter(t => t.issue >= 1 && t.issue <= 4);
+  const tasks57 = v.tasks.filter(t => t.issue >= 5 && t.issue <= 7);
+
+  let html = '';
+
+  // Shared text block for tasks 1-4
+  if (t1 && t1.text_html) {
+    html += `<div class="text-block"><h3>Текст 1</h3>${t1.text_html}</div>`;
+  }
+
+  // Tasks 1-4 (share a common text)
+  tasks14.forEach(t => {
+    html += renderTask(t);
+  });
+
+  // Tasks 5-7
+  tasks57.forEach(t => {
+    html += renderTask(t);
+  });
+
+  document.getElementById('content').innerHTML = html;
+}
+
+function renderTask(t) {
+  const cats = ['К1', 'К2', 'К3', 'К4', 'К5', 'К6', 'К7'];
+  const cat = cats[t.issue - 1] || '';
+  const id = `task-${t.issue}`;
+
+  return `
+    <div class="task">
+      <div class="task-header">${cat}. ${escHtml(t.category)}</div>
+      <div class="task-content">${t.content_html}</div>
+      <textarea class="task-answer" placeholder="Введите ваш ответ..."></textarea>
+      <div style="margin-top:8px">
+        <button class="toggle-btn" onclick="toggleById('${id}-sol')">Показать пояснение</button>
+        <button class="toggle-btn" onclick="toggleById('${id}-crit')">Показать критерии</button>
+      </div>
+      <div id="${id}-sol" class="solution" style="display:none">${t.solution_html}</div>
+      <div id="${id}-crit" class="criteria" style="display:none">${t.criteria_html}</div>
+    </div>`;
+}
+
+function toggleById(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const btn = event.target;
+  if (el.style.display === 'none') {
+    el.style.display = 'block';
+    btn.textContent = btn.textContent.replace('Показать', 'Спрятать');
+  } else {
+    el.style.display = 'none';
+    btn.textContent = btn.textContent.replace('Спрятать', 'Показать');
+  }
+}
+
+function escHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+</script>
+
+</body>
+</html>
