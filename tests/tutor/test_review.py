@@ -70,7 +70,7 @@ class TestReviewSystemPrompt:
     def test_contains_target_audience(self):
         prompt = REVIEW_SYSTEM_PROMPT.lower()
         assert "13" in prompt and "14" in prompt
-        assert "7 класс" in prompt or "седьм" in prompt
+        assert "семиклассник" in prompt or "7 класс" in prompt or "седьм" in prompt
 
     def test_contains_output_format(self):
         prompt = REVIEW_SYSTEM_PROMPT.lower()
@@ -395,19 +395,19 @@ class TestReviewEndpoint:
             assert e.code == 400
 
     def test_review_returns_200_with_mocked_execute(self, server_url):
-        req = urllib.request.Request(
-            f"{server_url}/api/review",
-            data=json.dumps({
-                "apiKey": "sk-test",
-                "variantNum": 1,
-                "tasks": [make_task(1)],
-                "progressContext": "",
-            }).encode(),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        try:
+        with patch("src.tutor.server.execute_review", return_value={"reviews": [], "parse_error": False}):
+            req = urllib.request.Request(
+                f"{server_url}/api/review",
+                data=json.dumps({
+                    "apiKey": "sk-test",
+                    "variantNum": 1,
+                    "tasks": [make_task(1)],
+                    "progressContext": "",
+                }).encode(),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
             with urllib.request.urlopen(req) as resp:
                 assert resp.status == 200
-        except urllib.error.HTTPError as e:
-            assert e.code == 200
+                data = json.loads(resp.read().decode())
+                assert "reviews" in data

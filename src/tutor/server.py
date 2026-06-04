@@ -23,6 +23,7 @@ import requests
 
 from src.tutor.compaction import compact_history
 from src.tutor.system_prompt import get_system_prompt
+from src.tutor.review import execute_review
 
 logger = logging.getLogger(__name__)
 
@@ -254,6 +255,8 @@ class TutorHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         if parsed.path == "/api/chat":
             self._handle_chat()
+        elif parsed.path == "/api/review":
+            self._handle_review()
         else:
             self.send_error(404)
 
@@ -308,6 +311,47 @@ class TutorHandler(BaseHTTPRequestHandler):
         self.end_headers()
         response_body = json.dumps({"content": content, "stop_reason": final_msg.get("stop_reason")},
                                    ensure_ascii=False)
+        self.wfile.write(response_body.encode("utf-8"))
+
+    def _handle_review(self):
+        length = int(self.headers.get("Content-Length", 0))
+        raw = self.rfile.read(length)
+        payload = json.loads(raw)
+
+        api_key = payload.get("apiKey", "")
+        tasks = payload.get("tasks", [])
+        variant_num = payload.get("variantNum", 0)
+        progress_context = payload.get("progressContext", "")
+
+        if not api_key:
+            self.send_error(400, "apiKey is required")
+            return
+        if not tasks:
+            self.send_error(400, "tasks array is required")
+            return
+
+        tb = self.get_textbook()
+
+        try:
+            result = execute_review(
+                api_key, tasks, variant_num, tb,
+                progress_context=progress_context,
+            )
+        except requests.HTTPError as e:
+            self.send_error(
+                e.response.status_code if e.response else 502,
+                f"Upstream error: {e}",
+            )
+            return
+        except requests.RequestException as e:
+            self.send_error(502, f"Upstream error: {e}")
+            return
+
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        response_body = json.dumps(result, ensure_ascii=False)
         self.wfile.write(response_body.encode("utf-8"))
 
     def do_OPTIONS(self):
