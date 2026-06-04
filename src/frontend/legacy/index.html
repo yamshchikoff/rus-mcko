@@ -345,29 +345,30 @@ function renderProgressTable() {
   if (topics.length === 0) return;
   const prog = loadProgress();
 
-  const theadCells = '<th>Вариант</th>'
-    + topics.map(t => `<th>${escHtml(t.category)}</th>`).join('')
-    + '<th>Завершён</th>';
+  // Build header
+  let th = '<tr><th>Вариант</th>';
+  topics.forEach(t => { th += `<th>${escHtml(t.category)}</th>`; });
+  th += '<th class="pt-finish-col">Завершён</th></tr>';
+  const colCount = 2 + topics.length; // Вариант + N тем + Завершён
+  console.assert(colCount === 9, 'Expected 9 columns, got ' + colCount);
 
-  let tbody = '';
+  // Build body
+  let tb = '';
   for (let vNum = 1; vNum <= 15; vNum++) {
     const p = prog[vNum];
-    const scoreCells = topics.map(t => {
-      if (p && p.scores && p.scores[t.issue] !== undefined) {
-        return `<td class="pt-score">${p.scores[t.issue]}</td>`;
-      }
-      return '<td class="pt-empty">—</td>';
-    }).join('');
-
-    const dateCell = p
-      ? `<td class="pt-date">${fmtDateTime(p.completed)}</td>`
-      : '<td class="pt-empty">—</td>';
-
-    tbody += `<tr><td class="pt-vnum">${vNum}</td>${scoreCells}${dateCell}</tr>`;
+    tb += `<tr><td class="pt-vnum">${vNum}</td>`;
+    topics.forEach(t => {
+      const s = (p && p.scores && p.scores[t.issue] !== undefined) ? p.scores[t.issue] : null;
+      tb += (s !== null) ? `<td class="pt-score">${s}</td>` : '<td class="pt-empty">—</td>';
+    });
+    tb += p
+      ? `<td class="pt-finish-col">${fmtDateTime(p.completed)}</td>`
+      : '<td class="pt-finish-col pt-empty">—</td>';
+    tb += '</tr>';
   }
 
-  const html = `<table class="progress-table"><thead><tr>${theadCells}</tr></thead><tbody>${tbody}</tbody></table>`;
-  document.getElementById('progress-table').innerHTML = html;
+  document.getElementById('progress-table').innerHTML =
+    `<table class="progress-table"><thead>${th}</thead><tbody>${tb}</tbody></table>`;
 }
 
 // Timer
