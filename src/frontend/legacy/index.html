@@ -345,14 +345,10 @@ function renderProgressTable() {
   if (topics.length === 0) return;
   const prog = loadProgress();
 
-  // Build header
   let th = '<tr><th>Вариант</th>';
   topics.forEach(t => { th += `<th>${escHtml(t.category)}</th>`; });
   th += '<th class="pt-finish-col">Завершён</th></tr>';
-  const colCount = 2 + topics.length; // Вариант + N тем + Завершён
-  console.assert(colCount === 9, 'Expected 9 columns, got ' + colCount);
 
-  // Build body
   let tb = '';
   for (let vNum = 1; vNum <= 15; vNum++) {
     const p = prog[vNum];
@@ -361,9 +357,11 @@ function renderProgressTable() {
       const s = (p && p.scores && p.scores[t.issue] !== undefined) ? p.scores[t.issue] : null;
       tb += (s !== null) ? `<td class="pt-score">${s}</td>` : '<td class="pt-empty">—</td>';
     });
-    tb += p
-      ? `<td class="pt-finish-col">${fmtDateTime(p.completed)}</td>`
-      : '<td class="pt-finish-col pt-empty">—</td>';
+    if (p) {
+      tb += `<td class="pt-finish-col">${fmtDateTime(p.completed)}</td>`;
+    } else {
+      tb += '<td class="pt-finish-col">—</td>';
+    }
     tb += '</tr>';
   }
 

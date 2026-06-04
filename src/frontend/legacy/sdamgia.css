@@ -195,7 +195,7 @@ header p { color: var(--muted); margin: 0; }
 }
 
 .pt-finish-col {
-    border-left: 2px solid var(--accent) !important;
+    background: #f8f8ff;
     font-size: 13px;
     white-space: nowrap;
     color: var(--muted);
