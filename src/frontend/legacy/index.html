@@ -18,6 +18,7 @@
   <select id="variant-select">
     <option value="">— Выберите вариант —</option>
   </select>
+  <button class="progress-toggle-btn" onclick="showProgress()">Прогресс</button>
 </div>
 
 <div id="timer-bar" class="timer-bar">
@@ -30,6 +31,7 @@
       <td>
         <button class="timer-btn" id="t-pause" onclick="toggleTimer()">Пауза</button>
         <button class="timer-btn" onclick="resetTimer()">Заново</button>
+        <button class="timer-btn timer-btn-finish" onclick="finishWork()">Завершить работу</button>
       </td>
     </tr>
   </table>
@@ -38,6 +40,14 @@
 <main id="content">
   <div class="loading">Загрузка вариантов...</div>
 </main>
+
+<section id="progress-section" class="progress-section" style="display:none">
+  <div style="display:flex;justify-content:space-between;align-items:center">
+    <h2>Прогресс</h2>
+    <button class="toggle-btn" onclick="hideProgress()" style="margin:0">Скрыть</button>
+  </div>
+  <div id="progress-table"></div>
+</section>
 
 <footer>
   Тренажёр ВПР · Русский язык 7 класс · Данные: rus7-vpr.sdamgia.ru
@@ -238,6 +248,83 @@ function cancelSwitch() {
   pendingVariant = null;
 }
 
+// Progress tracking
+function loadProgress() {
+  try { return JSON.parse(localStorage.getItem('vpr-progress')) || {}; }
+  catch { return {}; }
+}
+
+function saveProgress(prog) {
+  localStorage.setItem('vpr-progress', JSON.stringify(prog));
+}
+
+function markVariantCompleted(vNum) {
+  const prog = loadProgress();
+  prog[vNum] = { completed: new Date().toISOString() };
+  saveProgress(prog);
+}
+
+function finishWork() {
+  if (!currentVariant) return;
+  if (!confirm('Завершить работу и посмотреть результаты?')) return;
+  if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+  timerRunning = false;
+  markVariantCompleted(currentVariant);
+  renderProgressTable();
+  document.getElementById('progress-section').style.display = 'block';
+}
+
+function showProgress() {
+  renderProgressTable();
+  document.getElementById('progress-section').style.display = 'block';
+}
+
+function hideProgress() {
+  document.getElementById('progress-section').style.display = 'none';
+}
+
+function getTopics() {
+  if (variants.length === 0) return [];
+  const v = variants[0];
+  const topics = [];
+  for (const t of v.tasks) {
+    topics.push({ issue: t.issue, category: t.category });
+  }
+  return topics;
+}
+
+function fmtDateTime(iso) {
+  const d = new Date(iso);
+  const pad = n => n < 10 ? '0' + n : n;
+  return `${pad(d.getDate())}.${pad(d.getMonth()+1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function renderProgressTable() {
+  const topics = getTopics();
+  const prog = loadProgress();
+  let html = '<table class="progress-table"><thead><tr><th>Вариант</th>';
+  for (const t of topics) {
+    html += `<th>${escHtml(t.category)}</th>`;
+  }
+  html += '<th>Завершён</th></tr></thead><tbody>';
+
+  for (let vNum = 1; vNum <= 15; vNum++) {
+    html += `<tr><td class="pt-vnum">${vNum}</td>`;
+    const p = prog[vNum];
+    for (const t of topics) {
+      html += p
+        ? `<td class="pt-done">✓</td>`
+        : `<td class="pt-empty">—</td>`;
+    }
+    html += p
+      ? `<td class="pt-date">${fmtDateTime(p.completed)}</td>`
+      : `<td class="pt-empty">—</td>`;
+    html += '</tr>';
+  }
+  html += '</tbody></table>';
+  document.getElementById('progress-table').innerHTML = html;
+}
+
 // Timer
 const TOTAL_SEC = 45 * 60;
 let timerElapsed = 0;
@@ -261,7 +348,10 @@ function tick() {
     clearInterval(timerInterval);
     timerInterval = null;
     timerRunning = false;
-    alert('Время вышло.');
+    if (currentVariant) markVariantCompleted(currentVariant);
+    renderProgressTable();
+    document.getElementById('progress-section').style.display = 'block';
+    alert('Время вышло. Работа завершена.');
   }
 }
 

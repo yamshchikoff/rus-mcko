@@ -118,6 +118,89 @@ header p { color: var(--muted); margin: 0; }
 
 .timer-btn:hover { background: var(--accent-light); }
 
+.timer-btn-finish {
+    background: #fff3e0;
+    color: #e65100;
+    border-color: #e65100;
+    font-weight: bold;
+}
+.timer-btn-finish:hover { background: #ffe0b2; }
+
+.progress-toggle-btn {
+    padding: 6px 16px;
+    font-size: 15px;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: #f0f0f0;
+    color: var(--accent);
+    white-space: nowrap;
+}
+.progress-toggle-btn:hover { background: var(--accent-light); }
+
+/* Progress table */
+.progress-section {
+    margin-top: 30px;
+    padding: 20px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: #fafafa;
+}
+
+.progress-section h2 {
+    font-size: 20px;
+    margin: 0;
+    color: var(--accent);
+}
+
+.progress-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 15px;
+    font-size: 15px;
+}
+
+.progress-table th,
+.progress-table td {
+    border: 1px solid var(--border);
+    padding: 8px 6px;
+    text-align: center;
+    vertical-align: middle;
+}
+
+.progress-table th {
+    background: #f5f5f5;
+    font-weight: bold;
+    font-size: 13px;
+    color: var(--muted);
+}
+
+.progress-table thead th:first-child {
+    width: 60px;
+}
+
+.pt-vnum {
+    font-weight: bold;
+    color: var(--accent);
+    background: var(--accent-light);
+}
+
+.pt-done {
+    color: #2a7d2a;
+    font-size: 16px;
+    font-weight: bold;
+}
+
+.pt-empty {
+    color: #ccc;
+}
+
+.pt-date {
+    font-size: 13px;
+    white-space: nowrap;
+    color: var(--muted);
+}
+
 .text-block {
     margin-bottom: 30px;
     padding: 20px;
