@@ -476,6 +476,16 @@ sup { font-size: 0.75em; }
     border-bottom-left-radius: 4px;
 }
 
+.chat-msg.system-msg {
+    background: transparent;
+    color: var(--muted);
+    text-align: center;
+    font-size: 13px;
+    padding: 6px 0;
+    border: none;
+    margin: 4px 0;
+}
+
 .chat-msg.typing {
     align-self: flex-start;
     background: #f5f5f5;

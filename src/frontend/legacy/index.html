@@ -258,6 +258,8 @@ async function requestAIReview(vNum) {
     }
 
     renderReviewBlocks(vNum);
+    // Notify the chat model about completed review
+    await notifyModelOfReview(vNum);
   } catch (e) {
     if (e.name === 'AbortError') {
       showReviewError('Проверка заняла слишком много времени. Попробуй ещё раз.');
@@ -266,6 +268,62 @@ async function requestAIReview(vNum) {
     }
   } finally {
     hideReviewLoading();
+  }
+}
+
+async function notifyModelOfReview(vNum) {
+  // Push a system notification that reaches the model but is displayed subtly
+  const notification = {
+    role: 'user',
+    content: `[Система] Ученик только что завершил вариант ${vNum}. Результаты проверки записаны в матрицу прогресса (см. системный промпт выше). Найди в матрице прогресса запись с самой свежей датой завершения и баллами по темам К1–К7. Проанализируй прогресс ученика: какие темы идут хорошо, над какими нужно поработать. Сообщи ученику, что результаты его работы готовы, и дай краткий ободряющий комментарий о его прогрессе.`,
+  };
+  chatMessages.push(notification);
+
+  // Render the notification subtly in chat
+  const el = document.getElementById('chat-messages');
+  const div = document.createElement('div');
+  div.className = 'chat-msg system-msg';
+  div.textContent = 'Работа проверена. Результаты под заданиями →';
+  el.appendChild(div);
+  saveChatHistory();
+  scrollChatToBottom();
+
+  // Trigger assistant response
+  addTypingIndicator();
+  const sendBtn = document.getElementById('chat-send-btn');
+  sendBtn.disabled = true;
+  isStreaming = true;
+
+  try {
+    const resp = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        apiKey: getApiKey(),
+        messages: chatMessages.filter(m => m.role !== 'typing').map(m => ({
+          role: m.role,
+          content: m.content,
+        })),
+        progressContext: buildTutorContext(),
+        currentTask: currentVariant ? 'Вариант ' + currentVariant : '',
+      }),
+    });
+
+    if (!resp.ok) throw new Error(await resp.text());
+
+    const data = await resp.json();
+    const textBlocks = (data.content || [])
+      .filter(c => c.type === 'text')
+      .map(c => c.text)
+      .join('\n');
+
+    appendAssistantMessage(textBlocks || '(пустой ответ)');
+  } catch (e) {
+    removeTypingIndicator();
+    appendAssistantMessage('Результаты проверки готовы — смотри под заданиями в правой панели.');
+  } finally {
+    sendBtn.disabled = false;
+    isStreaming = false;
   }
 }
 
