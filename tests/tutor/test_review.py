@@ -417,3 +417,71 @@ class TestReviewEndpoint:
                 assert resp.status == 200
                 data = json.loads(resp.read().decode())
                 assert "reviews" in data
+
+
+# ── Pluralization (Russian) ───────────────────────────────────────────────────
+
+
+def pluralize_score_py(n: int) -> str:
+    """Python version of the JS pluralizeScore for testing algorithm."""
+    mod10 = n % 10
+    mod100 = n % 100
+    if mod10 == 1 and mod100 != 11:
+        return ""
+    if mod10 >= 2 and mod10 <= 4 and not (mod100 >= 12 and mod100 <= 14):
+        return "а"
+    return "ов"
+
+
+class TestPluralizeScore:
+    """Verify the Russian pluralization algorithm for балл/балла/баллов."""
+
+    def test_singular(self):
+        assert pluralize_score_py(1) == ""
+        assert pluralize_score_py(21) == ""
+        assert pluralize_score_py(31) == ""
+        assert pluralize_score_py(101) == ""
+
+    def test_few(self):
+        assert pluralize_score_py(2) == "а"
+        assert pluralize_score_py(3) == "а"
+        assert pluralize_score_py(4) == "а"
+        assert pluralize_score_py(22) == "а"
+        assert pluralize_score_py(24) == "а"
+        assert pluralize_score_py(34) == "а"
+
+    def test_many(self):
+        assert pluralize_score_py(5) == "ов"
+        assert pluralize_score_py(0) == "ов"
+        assert pluralize_score_py(6) == "ов"
+        assert pluralize_score_py(10) == "ов"
+        assert pluralize_score_py(20) == "ов"
+        assert pluralize_score_py(25) == "ов"
+
+    def test_teens_are_many(self):
+        """11-14 always use 'ов' form."""
+        assert pluralize_score_py(11) == "ов"
+        assert pluralize_score_py(12) == "ов"
+        assert pluralize_score_py(13) == "ов"
+        assert pluralize_score_py(14) == "ов"
+
+    def test_hundreds_with_teens(self):
+        """111-114 always use 'ов' form."""
+        assert pluralize_score_py(111) == "ов"
+        assert pluralize_score_py(112) == "ов"
+        assert pluralize_score_py(113) == "ов"
+        assert pluralize_score_py(114) == "ов"
+
+
+# ── Timeout consistency ──────────────────────────────────────────────────────
+
+
+class TestTimeoutConsistency:
+    def test_backend_timeout_within_bounds(self):
+        """Backend worst-case: MAX_TOOL_ITERATIONS * 60s timeout should be < 600s."""
+        from src.tutor.review import MAX_TOOL_ITERATIONS
+        per_request_timeout = 60  # hardcoded in execute_review requests.post(..., timeout=60)
+        worst_case = MAX_TOOL_ITERATIONS * per_request_timeout
+        assert worst_case <= 600, (
+            f"Backend worst-case timeout {worst_case}s exceeds 600s"
+        )
