@@ -9,9 +9,15 @@ from __future__ import annotations
 
 import json
 import logging
+import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
+
+# Allow running as `python3 src/tutor/server.py` from project root
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
 
 import requests
 
@@ -26,8 +32,8 @@ MODEL = "deepseek-v4-pro"
 MAX_TOKENS = 4096
 MAX_TOOL_ITERATIONS = 5
 STATIC_ROOT = Path(__file__).resolve().parent.parent / "frontend" / "legacy"
-DEFAULT_TEXTBOOK_PATH = Path(
-    __file__).resolve().parent.parent.parent / "data" / "textbook" / "textbook.json"
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+DEFAULT_TEXTBOOK_PATH = PROJECT_ROOT / "data" / "textbook" / "textbook.json"
 
 # ── Textbook loading ────────────────────────────────────────────────────────
 
@@ -317,9 +323,21 @@ class TutorHandler(BaseHTTPRequestHandler):
         if path == "/" or path == "":
             path = "/index.html"
 
-        file_path = STATIC_ROOT / path.lstrip("/")
-        if not file_path.is_file() or not str(file_path).startswith(str(STATIC_ROOT)):
+        # Data files live under the project root
+        if path.startswith("/data/"):
+            file_path = PROJECT_ROOT / path.lstrip("/")
+        else:
+            file_path = STATIC_ROOT / path.lstrip("/")
+
+        if not file_path.is_file():
             self.send_error(404)
+            return
+
+        # Path traversal guard
+        resolved = file_path.resolve()
+        if not (str(resolved).startswith(str(STATIC_ROOT.resolve())) or
+                str(resolved).startswith(str(PROJECT_ROOT.resolve()))):
+            self.send_error(403)
             return
 
         content_type = self._guess_mime(file_path.suffix)

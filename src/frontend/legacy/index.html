@@ -8,6 +8,29 @@
 </head>
 <body>
 
+<div class="main-container" id="main-container">
+
+<!-- ====== Left: Chat panel ====== -->
+<div class="chat-panel" id="chat-panel">
+  <div class="chat-header">
+    <h2>ИИ-репетитор</h2>
+    <button class="chat-settings-btn" onclick="showApiKeyModal()" title="Настройки API">⚙</button>
+  </div>
+  <div class="chat-messages" id="chat-messages">
+    <div class="chat-msg assistant">Привет! Я ИИ-репетитор по русскому языку. Выбери вариант и задание — я помогу разобраться.</div>
+  </div>
+  <div class="chat-input-area">
+    <textarea id="chat-input" placeholder="Задай вопрос репетитору..." rows="1"></textarea>
+    <button class="chat-send-btn" id="chat-send-btn" onclick="sendChatMessage()" title="Отправить (Enter)">↑</button>
+  </div>
+</div>
+
+<!-- ====== Resize handle ====== -->
+<div class="resize-handle" id="resize-handle"></div>
+
+<!-- ====== Right: Work panel (existing functionality) ====== -->
+<div class="work-panel">
+
 <header>
   <h1>Тренажёр ВПР по русскому языку</h1>
   <p>7 класс · 15 вариантов · формат 2026 года</p>
@@ -54,6 +77,10 @@
   Тренажёр ВПР · Русский язык 7 класс · Данные: rus7-vpr.sdamgia.ru
 </footer>
 
+</div><!-- .work-panel -->
+</div><!-- .main-container -->
+
+<!-- Existing modals -->
 <div id="reset-modal" class="modal-overlay" style="display:none">
   <div class="modal-box">
     <p class="modal-text">Начать всю работу сначала?</p>
@@ -74,7 +101,309 @@
   </div>
 </div>
 
+<!-- API key modal -->
+<div id="api-key-modal" class="api-key-modal" style="display:none">
+  <div class="api-key-box">
+    <h3>Ключ API</h3>
+    <p>Введите ключ доступа к DeepSeek API. Он сохранится только в вашем браузере и не будет передан никуда, кроме прокси-сервера.</p>
+    <input type="password" id="api-key-input" placeholder="sk-..."/>
+    <div class="api-key-buttons">
+      <button class="api-key-btn cancel" onclick="hideApiKeyModal()">Отмена</button>
+      <button class="api-key-btn save" onclick="saveApiKey()">Сохранить</button>
+    </div>
+  </div>
+</div>
+
 <script>
+// ── Chat state ──────────────────────────────────────────────────────────────
+
+const CHAT_HISTORY_KEY_PREFIX = 'vpr-chat-';
+const MAX_CHAT_MESSAGES = 100;
+
+let chatMessages = [];
+let isStreaming = false;
+
+// ── API key management ──────────────────────────────────────────────────────
+
+function getApiKey() {
+  return localStorage.getItem('vpr-api-key') || '';
+}
+
+function hasApiKey() {
+  return !!getApiKey();
+}
+
+function showApiKeyModal() {
+  document.getElementById('api-key-input').value = getApiKey();
+  document.getElementById('api-key-modal').style.display = 'flex';
+}
+
+function hideApiKeyModal() {
+  if (!hasApiKey()) return; // must set key on first run
+  document.getElementById('api-key-modal').style.display = 'none';
+}
+
+function saveApiKey() {
+  const key = document.getElementById('api-key-input').value.trim();
+  if (!key) return;
+  localStorage.setItem('vpr-api-key', key);
+  document.getElementById('api-key-modal').style.display = 'none';
+}
+
+// ── Chat history persistence ────────────────────────────────────────────────
+
+function loadChatHistory(vNum) {
+  const key = CHAT_HISTORY_KEY_PREFIX + vNum;
+  try {
+    return JSON.parse(localStorage.getItem(key)) || [];
+  } catch {
+    return [];
+  }
+}
+
+function saveChatHistory(vNum) {
+  const key = CHAT_HISTORY_KEY_PREFIX + vNum;
+  // Keep last N messages
+  if (chatMessages.length > MAX_CHAT_MESSAGES) {
+    chatMessages = chatMessages.slice(-MAX_CHAT_MESSAGES);
+  }
+  localStorage.setItem(key, JSON.stringify(chatMessages));
+}
+
+// ── Build tutor context ─────────────────────────────────────────────────────
+
+function buildTutorContext(vNum) {
+  const ctx = [];
+
+  // Current task info
+  if (currentVariant) {
+    ctx.push('Вариант ' + currentVariant);
+    const v = variants.find(x => x.num === currentVariant);
+    if (v) {
+      ctx.push('Задания:\n');
+      v.tasks.forEach(t => {
+        const div = document.createElement('div');
+        div.innerHTML = t.content_html;
+        const text = div.textContent.trim().substring(0, 300);
+        ctx.push('К' + t.issue + '. ' + t.category + ': ' + text);
+      });
+    }
+  }
+
+  // Progress
+  const prog = loadProgress();
+  if (Object.keys(prog).length > 0) {
+    ctx.push('\nПрогресс:');
+    for (const [vn, p] of Object.entries(prog)) {
+      const scores = p.scores || {};
+      const scoreStr = Object.entries(scores).map(([issue, s]) => 'К' + issue + '=' + s).join(', ');
+      ctx.push('  Вариант ' + vn + ': ' + scoreStr);
+    }
+  }
+
+  return ctx.join('\n');
+}
+
+// ── Chat rendering ──────────────────────────────────────────────────────────
+
+function simpleMarkdown(text) {
+  // Basic markdown → HTML (bold, italic, code blocks, lists, paragraphs)
+  let html = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+
+  // Code blocks
+  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
+  // Inline code
+  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+  // Bold
+  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  // Italic
+  html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+  // Unordered lists
+  html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
+  html = html.replace(/((?:<li>.*<\/li>\n?)+)/g, '<ul>$1</ul>');
+  // Ordered lists
+  html = html.replace(/^\d+\.\s+(.+)$/gm, '<li>$1</li>');
+  // Double newlines → paragraphs
+  html = html.replace(/\n\n/g, '</p><p>');
+  html = '<p>' + html + '</p>';
+  // Clean empty paragraphs
+  html = html.replace(/<p>\s*<\/p>/g, '');
+
+  return html;
+}
+
+function renderChatMessage(msg) {
+  const div = document.createElement('div');
+  div.className = 'chat-msg ' + msg.role;
+  if (msg.role === 'assistant') {
+    div.innerHTML = simpleMarkdown(msg.content);
+  } else {
+    div.textContent = msg.content;
+  }
+  return div;
+}
+
+function scrollChatToBottom() {
+  const el = document.getElementById('chat-messages');
+  el.scrollTop = el.scrollHeight;
+}
+
+function addTypingIndicator() {
+  const el = document.getElementById('chat-messages');
+  const div = document.createElement('div');
+  div.className = 'chat-msg typing';
+  div.id = 'typing-indicator';
+  div.textContent = 'Репетитор печатает...';
+  el.appendChild(div);
+  scrollChatToBottom();
+}
+
+function removeTypingIndicator() {
+  const el = document.getElementById('typing-indicator');
+  if (el) el.remove();
+}
+
+function appendAssistantMessage(content) {
+  removeTypingIndicator();
+  const msg = { role: 'assistant', content: content };
+  chatMessages.push(msg);
+  const el = document.getElementById('chat-messages');
+  el.appendChild(renderChatMessage(msg));
+  if (currentVariant) saveChatHistory(currentVariant);
+  scrollChatToBottom();
+}
+
+function appendUserMessage(content) {
+  const msg = { role: 'user', content: content };
+  chatMessages.push(msg);
+  const el = document.getElementById('chat-messages');
+  el.appendChild(renderChatMessage(msg));
+  if (currentVariant) saveChatHistory(currentVariant);
+  scrollChatToBottom();
+}
+
+// ── Chat API call ───────────────────────────────────────────────────────────
+
+async function sendChatMessage() {
+  if (isStreaming) return;
+
+  const input = document.getElementById('chat-input');
+  const text = input.value.trim();
+  if (!text) return;
+
+  input.value = '';
+  input.style.height = 'auto';
+
+  const apiKey = getApiKey();
+  if (!apiKey) {
+    showApiKeyModal();
+    return;
+  }
+
+  appendUserMessage(text);
+  addTypingIndicator();
+
+  const sendBtn = document.getElementById('chat-send-btn');
+  sendBtn.disabled = true;
+  isStreaming = true;
+
+  try {
+    const resp = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        apiKey: apiKey,
+        messages: chatMessages.filter(m => m.role !== 'typing').map(m => ({
+          role: m.role,
+          content: m.content
+        })),
+        progressContext: currentVariant ? buildTutorContext(currentVariant) : '',
+        currentTask: currentVariant ? 'Вариант ' + currentVariant : '',
+      }),
+    });
+
+    if (!resp.ok) {
+      const errText = await resp.text();
+      throw new Error(errText || 'Ошибка сервера');
+    }
+
+    const data = await resp.json();
+    const textBlocks = (data.content || [])
+      .filter(c => c.type === 'text')
+      .map(c => c.text)
+      .join('\n');
+
+    appendAssistantMessage(textBlocks || '(пустой ответ)');
+  } catch (e) {
+    removeTypingIndicator();
+    appendAssistantMessage('Извини, произошла ошибка: ' + e.message + '\n\nПроверь ключ API в настройках (⚙) и попробуй снова.');
+  } finally {
+    sendBtn.disabled = false;
+    isStreaming = false;
+    document.getElementById('chat-input').focus();
+  }
+}
+
+// ── Chat keyboard shortcuts ─────────────────────────────────────────────────
+
+document.addEventListener('DOMContentLoaded', () => {
+  const input = document.getElementById('chat-input');
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.ctrlKey && !e.shiftKey) {
+      e.preventDefault();
+      sendChatMessage();
+    }
+    // Ctrl+Enter or Shift+Enter → newline (default behaviour)
+  });
+
+  // Show API key modal on first launch if no key
+  if (!hasApiKey()) {
+    showApiKeyModal();
+  }
+
+  // Resize handle
+  setupResizeHandle();
+});
+
+// ── Resize handle ───────────────────────────────────────────────────────────
+
+function setupResizeHandle() {
+  const handle = document.getElementById('resize-handle');
+  const container = document.getElementById('main-container');
+  let dragging = false;
+
+  handle.addEventListener('mousedown', (e) => {
+    dragging = true;
+    handle.classList.add('active');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    const rect = container.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const total = rect.width;
+    const leftPct = Math.max(20, Math.min(80, (x / total) * 100));
+    const rightPct = 100 - leftPct;
+    container.style.gridTemplateColumns = leftPct + '% 6px ' + rightPct + '%';
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    handle.classList.remove('active');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  });
+}
+
+// ── Variant data ────────────────────────────────────────────────────────────
+
 const DATA_URL = 'data/vpr/variants.json';
 
 let variants = [];
@@ -92,7 +421,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('content').innerHTML =
       `<div class="error">Ошибка загрузки вариантов: ${e.message}<br>
        Убедитесь, что сервер запущен из корня проекта:<br>
-       <code>python3 -m http.server 8080</code></div>`;
+       <code>python3 src/tutor/server.py --port 8080</code></div>`;
   }
 });
 
@@ -119,29 +448,46 @@ function showVariant(num) {
   currentVariant = num;
   startTimer();
 
+  // Load chat history for this variant
+  chatMessages = loadChatHistory(num);
+  renderChatHistory();
+
   const t1 = v.tasks.find(t => t.issue === 1);
   const tasks14 = v.tasks.filter(t => t.issue >= 1 && t.issue <= 4);
   const tasks57 = v.tasks.filter(t => t.issue >= 5 && t.issue <= 7);
 
   let html = '';
 
-  // Shared text block for tasks 1-4
   if (t1 && t1.text_html) {
     html += `<div class="text-block"><h3>Текст 1</h3>${balanceHtml(t1.text_html)}</div>`;
   }
 
-  // Tasks 1-4 (share a common text)
   tasks14.forEach(t => {
     html += renderTask(t, num);
   });
 
-  // Tasks 5-7
   tasks57.forEach(t => {
     html += renderTask(t, num);
   });
 
   document.getElementById('content').innerHTML = html;
   restoreAnswers(num);
+}
+
+function renderChatHistory() {
+  const el = document.getElementById('chat-messages');
+  el.innerHTML = '';
+  if (chatMessages.length === 0) {
+    const div = document.createElement('div');
+    div.className = 'chat-msg assistant';
+    div.textContent = 'Привет! Я ИИ-репетитор по русскому языку. Выбери вариант и задание — я помогу разобраться.';
+    el.appendChild(div);
+  } else {
+    chatMessages.forEach(msg => {
+      el.appendChild(renderChatMessage(msg));
+    });
+  }
+  scrollChatToBottom();
 }
 
 function renderTask(t, vNum) {
@@ -260,8 +606,6 @@ function saveProgress(prog) {
   localStorage.setItem('vpr-progress', JSON.stringify(prog));
 }
 
-// Parse балл values from criteria HTML. Returns {min, next}:
-// min — lowest балл (for empty answer), next — балл above min (for non-empty).
 function parseScores(criteriaHtml) {
   const div = document.createElement('div');
   div.innerHTML = criteriaHtml;
@@ -281,7 +625,6 @@ function parseScores(criteriaHtml) {
   return { min, next };
 }
 
-// Stub scoring: empty answer → min балл, non-empty → next балл.
 function scoreTask(vNum, issue) {
   const ta = document.getElementById(`ta-${vNum}-${issue}`);
   const answer = ta ? ta.value.trim() : '';
