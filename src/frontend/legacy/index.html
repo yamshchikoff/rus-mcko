@@ -20,6 +20,21 @@
   </select>
 </div>
 
+<div id="timer-bar" class="timer-bar">
+  <table class="timer-table">
+    <tr>
+      <td class="timer-label">Прошло&nbsp;</td>
+      <td class="timer-value timer-elapsed" id="t-elapsed">0:00</td>
+      <td class="timer-label">Осталось&nbsp;</td>
+      <td class="timer-value timer-remaining" id="t-remaining">45:00</td>
+      <td>
+        <button class="timer-btn" id="t-pause" onclick="toggleTimer()">Пауза</button>
+        <button class="timer-btn" onclick="resetTimer()">Заново</button>
+      </td>
+    </tr>
+  </table>
+</div>
+
 <main id="content">
   <div class="loading">Загрузка вариантов...</div>
 </main>
@@ -66,6 +81,8 @@ function populateSelector() {
 function showVariant(num) {
   const v = variants.find(x => x.num === num);
   if (!v) return;
+
+  startTimer();
 
   const t1 = v.tasks.find(t => t.issue === 1);
   const tasks14 = v.tasks.filter(t => t.issue >= 1 && t.issue <= 4);
@@ -133,6 +150,76 @@ function escHtml(s) {
   const d = document.createElement('div');
   d.textContent = s;
   return d.innerHTML;
+}
+
+// Timer
+const TOTAL_SEC = 45 * 60;
+let timerElapsed = 0;
+let timerInterval = null;
+let timerRunning = false;
+
+function startTimer() {
+  if (timerInterval) return;
+  timerElapsed = 0;
+  timerRunning = true;
+  document.getElementById('timer-bar').classList.add('active');
+  document.getElementById('t-pause').textContent = 'Пауза';
+  updateTimerDisplay();
+  timerInterval = setInterval(tick, 1000);
+}
+
+function tick() {
+  timerElapsed++;
+  updateTimerDisplay();
+  if (timerElapsed >= TOTAL_SEC) {
+    clearInterval(timerInterval);
+    timerInterval = null;
+    timerRunning = false;
+    alert('Время вышло.');
+  }
+}
+
+function toggleTimer() {
+  if (!timerInterval && timerElapsed >= TOTAL_SEC) return;
+  if (timerRunning) {
+    clearInterval(timerInterval);
+    timerInterval = null;
+    timerRunning = false;
+    document.getElementById('t-pause').textContent = 'Продолжить';
+  } else {
+    timerRunning = true;
+    document.getElementById('t-pause').textContent = 'Пауза';
+    timerInterval = setInterval(tick, 1000);
+  }
+}
+
+function resetTimer() {
+  if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+  timerElapsed = 0;
+  timerRunning = true;
+  document.getElementById('timer-bar').classList.add('active');
+  document.getElementById('t-pause').textContent = 'Пауза';
+  updateTimerDisplay();
+  timerInterval = setInterval(tick, 1000);
+}
+
+function updateTimerDisplay() {
+  var rem = TOTAL_SEC - timerElapsed;
+  document.getElementById('t-elapsed').textContent = fmtTime(timerElapsed);
+  var remEl = document.getElementById('t-remaining');
+  remEl.textContent = fmtTime(rem);
+  if (rem <= 300) {
+    remEl.classList.add('warning');
+  } else {
+    remEl.classList.remove('warning');
+  }
+}
+
+function fmtTime(totalSec) {
+  if (totalSec < 0) return '0:00';
+  var m = Math.floor(totalSec / 60);
+  var s = totalSec % 60;
+  return m + ':' + (s < 10 ? '0' : '') + s;
 }
 </script>
 

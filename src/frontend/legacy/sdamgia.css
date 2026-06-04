@@ -55,6 +55,69 @@ header p { color: var(--muted); margin: 0; }
     border-radius: 4px;
 }
 
+/* Timer */
+
+.timer-bar {
+    display: none;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: var(--bg);
+    border-bottom: 2px solid var(--border);
+    padding: 12px 20px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+
+.timer-bar.active { display: block; }
+
+.timer-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 16px;
+}
+
+.timer-table td {
+    padding: 4px 12px;
+    vertical-align: middle;
+}
+
+.timer-table .timer-label {
+    text-align: right;
+    color: var(--muted);
+    white-space: nowrap;
+}
+
+.timer-table .timer-value {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 22px;
+    font-weight: bold;
+    white-space: nowrap;
+}
+
+.timer-table .timer-value.warning {
+    color: #c00;
+    animation: timer-pulse 1s infinite;
+}
+
+@keyframes timer-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+
+.timer-btn {
+    padding: 4px 14px;
+    font-size: 14px;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: #f0f0f0;
+    color: var(--accent);
+    white-space: nowrap;
+}
+
+.timer-btn:hover { background: var(--accent-light); }
+
 .text-block {
     margin-bottom: 30px;
     padding: 20px;
