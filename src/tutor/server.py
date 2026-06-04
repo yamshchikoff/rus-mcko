@@ -168,6 +168,8 @@ def run_tool_use_loop(
     tools: list[dict],
     textbook: dict,
     max_iterations: int = MAX_TOOL_ITERATIONS,
+    progress_context: str = "",
+    current_task: str = "",
 ) -> dict:
     """Send messages to DeepSeek, handling tool-use callbacks up to *max_iterations*.
 
@@ -180,13 +182,18 @@ def run_tool_use_loop(
         "anthropic-version": ANTHROPIC_VERSION,
     }
 
+    system_prompt = get_system_prompt(
+        progress_context=progress_context,
+        current_task=current_task,
+    )
+
     for _ in range(max_iterations):
         # Compact before each call
         compacted = compact_history(messages)
 
         body = {
             "model": MODEL,
-            "system": get_system_prompt(),
+            "system": system_prompt,
             "messages": compacted,
             "tools": tools,
             "stream": False,  # non-streaming for tool-use loop; streaming on final
@@ -279,19 +286,12 @@ class TutorHandler(BaseHTTPRequestHandler):
         tools = make_tools()
         tb = self.get_textbook()
 
-        # Inject self-contained context for the first message
-        if progress_context or current_task:
-            _, _, body = build_chat_request(
-                api_key, messages,
+        try:
+            final_msg = run_tool_use_loop(
+                api_key, messages, tools, tb,
                 progress_context=progress_context,
                 current_task=current_task,
             )
-            system = body["system"]
-        else:
-            system = get_system_prompt()
-
-        try:
-            final_msg = run_tool_use_loop(api_key, messages, tools, tb)
         except requests.HTTPError as e:
             self.send_error(e.response.status_code if e.response else 502,
                             f"Upstream error: {e}")
