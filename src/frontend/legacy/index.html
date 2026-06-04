@@ -44,6 +44,7 @@
 <section id="progress-section" class="progress-section" style="display:none">
   <div style="display:flex;justify-content:space-between;align-items:center">
     <h2>Прогресс</h2>
+    <button class="toggle-btn" onclick="exportProgress()" style="margin:0">Скачать</button>
     <button class="toggle-btn" onclick="hideProgress()" style="margin:0">Скрыть</button>
   </div>
   <div id="progress-table"></div>
@@ -367,6 +368,27 @@ function renderProgressTable() {
 
   document.getElementById('progress-table').innerHTML =
     `<table class="progress-table"><thead>${th}</thead><tbody>${tb}</tbody></table>`;
+}
+
+function exportProgress() {
+  const progress = loadProgress();
+  const answers = {};
+  for (let v = 1; v <= 15; v++) {
+    for (let i = 1; i <= 7; i++) {
+      const key = `vpr-ans-${v}-${i}`;
+      const val = localStorage.getItem(key);
+      if (val) answers[`${v}-${i}`] = val;
+    }
+  }
+  const blob = new Blob(
+    [JSON.stringify({ progress, answers, exported: new Date().toISOString() }, null, 2)],
+    { type: 'application/json' }
+  );
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'vpr-progress.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
 }
 
 // Timer
