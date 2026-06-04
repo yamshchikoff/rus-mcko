@@ -1,10 +1,17 @@
 """Context compaction: keep history within token budgets.
 
-Strategy (MVP): preserve the system prompt, then trim oldest messages from the
-front until the total fits.  v2 may add LLM summarisation of trimmed prefix.
+Strategy: when total exceeds *max_tokens* (800K), evict the oldest messages
+until the remainder fits within *target_tokens* (500K — half of 1M window).
+The system prompt (first message) is always preserved.  After compaction
+the model still sees its identity, restrictions, moral guidance, and tools
+because these live in the system prompt.
 """
 
 from __future__ import annotations
+
+WINDOW_TOKENS = 1_000_000
+COMPACTION_THRESHOLD = 800_000
+COMPACTION_TARGET = 500_000  # half of the window
 
 
 def estimate_tokens(messages: list[dict]) -> float:
@@ -19,12 +26,14 @@ def estimate_tokens(messages: list[dict]) -> float:
 
 def compact_history(
     messages: list[dict],
-    max_tokens: float = 170_000,
+    max_tokens: float = COMPACTION_THRESHOLD,
+    target_tokens: float = COMPACTION_TARGET,
 ) -> list[dict]:
-    """Return a prefix of *messages* that fits within *max_tokens*.
+    """Return a pruned copy of *messages* that fits within *target_tokens*.
 
-    The first message is treated as the system prompt and always kept.
-    After it, messages are kept from the end (most recent) backwards.
+    If the total is already ≤ *max_tokens*, return the list unchanged.
+    Otherwise, keep the system prompt (first message) plus the most recent
+    messages up to *target_tokens*.
     """
     if not messages:
         return []
@@ -37,7 +46,7 @@ def compact_history(
     system = messages[:1] if has_system else []
     rest = messages[1:] if has_system else messages
 
-    budget = max_tokens - estimate_tokens(system)
+    budget = target_tokens - estimate_tokens(system)
     if budget <= 0:
         return system
 

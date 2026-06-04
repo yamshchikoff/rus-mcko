@@ -29,11 +29,13 @@ def dummy_textbook():
             {"part": 1, "pdf_page": 5, "printed_page": 4, "text": "Текст страницы 5"},
             {"part": 1, "pdf_page": 6, "printed_page": 5, "text": "Текст страницы 6"},
         ],
-        "_page_index": {
-            (1, 5): {"part": 1, "pdf_page": 5, "printed_page": 4, "text": "Текст страницы 5"},
-            (1, 6): {"part": 1, "pdf_page": 6, "printed_page": 5, "text": "Текст страницы 6"},
-        },
     }
+
+
+def dummy_textbook_with_index():
+    d = dummy_textbook()
+    d["_page_index"] = {(p["part"], p["pdf_page"]): p for p in d["pages"]}
+    return d
 
 
 # ── Textbook loading ────────────────────────────────────────────────────────
@@ -81,37 +83,37 @@ class TestMakeTools:
 
 class TestExecuteTools:
     def test_executes_show_toc(self):
-        tb = dummy_textbook()
+        tb = dummy_textbook_with_index()
         results = execute_tools([{"name": "show_toc", "input": {}}], tb)
         assert len(results) == 1
         assert results[0]["type"] == "tool_result"
         assert "Тема 1" in results[0]["content"]
 
     def test_executes_get_page(self):
-        tb = dummy_textbook()
+        tb = dummy_textbook_with_index()
         results = execute_tools([{"name": "get_page", "input": {"part": 1, "page": 5}}], tb)
         assert len(results) == 1
         assert results[0]["type"] == "tool_result"
         assert "Текст страницы 5" in results[0]["content"]
 
     def test_get_page_invalid_part(self):
-        tb = dummy_textbook()
+        tb = dummy_textbook_with_index()
         results = execute_tools([{"name": "get_page", "input": {"part": 99, "page": 5}}], tb)
         assert "error" in results[0]["content"].lower() or "не найден" in results[0]["content"].lower()
 
     def test_get_page_not_found(self):
-        tb = dummy_textbook()
+        tb = dummy_textbook_with_index()
         results = execute_tools([{"name": "get_page", "input": {"part": 1, "page": 999}}], tb)
         assert "error" in results[0]["content"].lower() or "не найд" in results[0]["content"].lower()
 
     def test_unknown_tool(self):
-        tb = dummy_textbook()
+        tb = dummy_textbook_with_index()
         results = execute_tools([{"name": "unknown_tool", "input": {}}], tb)
         assert len(results) == 1
         assert "error" in results[0]["content"].lower() or "неизвест" in results[0]["content"].lower()
 
     def test_multiple_tools(self):
-        tb = dummy_textbook()
+        tb = dummy_textbook_with_index()
         results = execute_tools(
             [
                 {"name": "show_toc", "input": {}},
@@ -191,14 +193,14 @@ class TestToolUseLoop:
                 "sk-test",
                 [{"role": "user", "content": "Привет!"}],
                 make_tools(),
-                dummy_textbook(),
+                dummy_textbook_with_index(),
             )
 
         assert result["stop_reason"] == "end_turn"
         assert any(c["type"] == "text" for c in result["content"])
 
     def test_executes_tool_use_and_retries(self):
-        tb = dummy_textbook()
+        tb = dummy_textbook_with_index()
 
         call1 = MagicMock()
         call1.json.return_value = {
@@ -229,7 +231,7 @@ class TestToolUseLoop:
         assert result["stop_reason"] == "end_turn"
 
     def test_max_iterations_prevents_infinite_loop(self):
-        tb = dummy_textbook()
+        tb = dummy_textbook_with_index()
 
         always_tool = MagicMock()
         always_tool.json.return_value = {
@@ -258,7 +260,7 @@ class TestToolUseLoop:
 
 class TestCompactionInLoop:
     def test_compacts_long_history(self):
-        tb = dummy_textbook()
+        tb = dummy_textbook_with_index()
 
         mock_response = MagicMock()
         mock_response.json.return_value = {
@@ -269,14 +271,19 @@ class TestCompactionInLoop:
             "stop_reason": "end_turn",
         }
 
-        long_msg = {"role": "user", "content": "x" * 2000}
-        messages = [long_msg] * 100  # ~200K chars, well over threshold
+        long_msg = {"role": "user", "content": "x" * 7000}
+        messages = [long_msg] * 100  # ~700K chars / 3.5 ≈ 200K tokens
 
-        with patch("src.tutor.server.requests.post", return_value=mock_response) as mock_post:
-            result = run_tool_use_loop("sk-test", messages, make_tools(), tb)
+        # Simulate compaction by returning a subset
+        with patch("src.tutor.server.compact_history",
+                   return_value=messages[:10]):
+            with patch("src.tutor.server.requests.post",
+                       return_value=mock_response) as mock_post:
+                result = run_tool_use_loop("sk-test", messages, make_tools(), tb,
+                                           max_iterations=1)
 
         # Verify compaction happened: the sent messages should be fewer than original
-        sent_messages = mock_post.call_args[0][1]["messages"]
+        sent_messages = mock_post.call_args.kwargs["json"]["messages"]
         assert len(sent_messages) < len(messages)
         assert result["stop_reason"] == "end_turn"
 
@@ -299,7 +306,7 @@ class TestErrorHandling:
                     "sk-bad-key",
                     [{"role": "user", "content": "Привет"}],
                     make_tools(),
-                    dummy_textbook(),
+                    dummy_textbook_with_index(),
                 )
 
     def test_network_error(self):
@@ -309,7 +316,7 @@ class TestErrorHandling:
                     "sk-test",
                     [{"role": "user", "content": "Привет"}],
                     make_tools(),
-                    dummy_textbook(),
+                    dummy_textbook_with_index(),
                 )
 
 

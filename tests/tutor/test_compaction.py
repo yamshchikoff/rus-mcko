@@ -56,7 +56,7 @@ class TestCompactHistory:
         for i in range(30):
             msgs.append(make_msg("user", f"Вопрос {i}: " + "a" * 500))
             msgs.append(make_msg("assistant", f"Ответ {i}: " + "b" * 500))
-        result = compact_history(msgs, max_tokens=7000)
+        result = compact_history(msgs, max_tokens=5000, target_tokens=2000)
         assert result[0] == sys_msg
         assert len(result) < len(msgs)
         # The last exchange should be preserved
@@ -69,7 +69,7 @@ class TestCompactHistory:
 
     def test_no_system_prompt_still_compacts(self):
         msgs = [make_msg("user", "x" * 1000) for _ in range(50)]
-        result = compact_history(msgs, max_tokens=2000)
+        result = compact_history(msgs, max_tokens=3000, target_tokens=1000)
         # Should still trim, just without system prompt anchoring
         assert len(result) < len(msgs)
         assert len(result) >= 2  # at least one exchange
