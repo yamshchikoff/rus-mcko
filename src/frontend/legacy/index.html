@@ -53,11 +53,22 @@
   </div>
 </div>
 
+<div id="switch-modal" class="modal-overlay" style="display:none">
+  <div class="modal-box">
+    <p class="modal-text">Сбросить прогресс по текущей работе и сменить вариант?</p>
+    <div class="modal-buttons">
+      <button class="modal-btn modal-btn-yes" onclick="doSwitch()">Да</button>
+      <button class="modal-btn modal-btn-no" onclick="cancelSwitch()">Нет</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const DATA_URL = 'data/vpr/variants.json';
 
 let variants = [];
 let currentVariant = null;
+let pendingVariant = null;
 
 document.addEventListener('DOMContentLoaded', async () => {
   try {
@@ -83,7 +94,7 @@ function populateSelector() {
     sel.appendChild(opt);
   });
   sel.addEventListener('change', () => {
-    if (sel.value) showVariant(parseInt(sel.value));
+    if (sel.value) requestVariantSwitch(parseInt(sel.value));
   });
   document.getElementById('content').innerHTML =
     '<div class="loading">Выберите вариант, чтобы начать</div>';
@@ -93,6 +104,7 @@ function showVariant(num) {
   const v = variants.find(x => x.num === num);
   if (!v) return;
 
+  if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
   currentVariant = num;
   startTimer();
 
@@ -195,6 +207,35 @@ function restoreAnswers(vNum) {
       ta.value = loadAnswer(vNum, issue);
     }
   }
+}
+
+// Variant switching with confirmation
+function requestVariantSwitch(num) {
+  if (num === currentVariant) return;
+  if (!currentVariant) {
+    showVariant(num);
+    return;
+  }
+  pendingVariant = num;
+  document.getElementById('switch-modal').style.display = 'flex';
+}
+
+function doSwitch() {
+  document.getElementById('switch-modal').style.display = 'none';
+  if (currentVariant) {
+    for (let issue = 1; issue <= 7; issue++) {
+      localStorage.removeItem(`vpr-ans-${currentVariant}-${issue}`);
+    }
+  }
+  showVariant(pendingVariant);
+  pendingVariant = null;
+}
+
+function cancelSwitch() {
+  document.getElementById('switch-modal').style.display = 'none';
+  const sel = document.getElementById('variant-select');
+  sel.value = currentVariant || '';
+  pendingVariant = null;
 }
 
 // Timer
