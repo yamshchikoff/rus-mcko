@@ -188,9 +188,6 @@ def _make_topic(title: str, printed_page: int | None, part: int) -> dict:
         'title': title,
         'part': part,
         'pdf_page': pdf_page,
+        'number': number,
     }
-    if number:
-        result['number'] = number
-    else:
-        result['number'] = None
     return result

@@ -12,6 +12,9 @@ def _load() -> dict:
     if _data is None:
         with open(TEXTBOOK_JSON, 'r', encoding='utf-8') as f:
             _data = json.load(f)
+        _data['_page_index'] = {
+            (p['part'], p['pdf_page']): p for p in _data['pages']
+        }
     return _data
 
 
@@ -57,8 +60,7 @@ def get_page(part: int, page: int) -> str:
         raise ValueError(f'part must be 1 or 2, got {part}')
 
     data = _load()
-    for p in data['pages']:
-        if p['part'] == part and p['pdf_page'] == page:
-            return p['text']
-
-    raise ValueError(f'Page not found: part={part}, page={page}')
+    p = data['_page_index'].get((part, page))
+    if p is None:
+        raise ValueError(f'Page not found: part={part}, page={page}')
+    return p['text']

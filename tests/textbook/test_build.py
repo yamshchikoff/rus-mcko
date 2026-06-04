@@ -108,8 +108,9 @@ def test_build_second_run_idempotent():
     from src.textbook.build import build
     build()  # first run
     mtime_before = os.path.getmtime(TEXTBOOK_JSON)
-    build()  # second run — should succeed
-    assert os.path.exists(TEXTBOOK_JSON)
+    build()  # second run
+    mtime_after = os.path.getmtime(TEXTBOOK_JSON)
+    assert mtime_after == mtime_before, "Second run should not rewrite file"
 
 
 def _flatten_toc(entries):
