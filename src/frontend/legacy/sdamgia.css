@@ -185,10 +185,9 @@ header p { color: var(--muted); margin: 0; }
     background: var(--accent-light);
 }
 
-.pt-done {
-    color: #2a7d2a;
-    font-size: 16px;
+.pt-score {
     font-weight: bold;
+    color: var(--text-color);
 }
 
 .pt-empty {
