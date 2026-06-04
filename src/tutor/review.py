@@ -162,7 +162,7 @@ def parse_review_response(text: str) -> dict:
                     r.setdefault("textbook_refs", [])
                     # Clamp score to valid range
                     max_s = r.get("max_score", 0)
-                    if r.get("score", 0) > max_s:
+                    if max_s > 0 and r.get("score", 0) > max_s:
                         r["score"] = max_s
                     if r.get("score", 0) < 0:
                         r["score"] = 0
