@@ -45,7 +45,7 @@ def test_get_page_content_correct():
 
 def test_get_page_part2():
     from src.textbook.tools import get_page
-    text = get_page(part=2, page=14)
+    text = get_page(part=2, page=15)
     assert len(text) > 0
     assert '§ 49' in text or 'Категория состояния' in text
 
