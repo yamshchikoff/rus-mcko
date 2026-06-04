@@ -194,6 +194,12 @@ class TestParseReviewResponse:
         r = result["reviews"][0]
         assert r["max_score"] >= r["score"]
 
+    def test_clamping_skipped_when_max_score_missing(self):
+        data = '{"reviews": [{"issue": 1, "score": 3, "strengths": "", "weaknesses": "", "recommendation": ""}]}'
+        result = parse_review_response(data)
+        r = result["reviews"][0]
+        assert r["score"] == 3
+
     def test_handles_partial_reviews(self):
         data = json.dumps({"reviews": [
             {"issue": 1, "score": 3, "max_score": 4, "strengths": "", "weaknesses": "", "recommendation": ""},
