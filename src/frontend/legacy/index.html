@@ -372,9 +372,11 @@ function renderProgressTable() {
 
 function exportProgress() {
   const progress = loadProgress();
+  const nV = variants.length || 15;
+  const nT = (variants.length > 0 && variants[0].tasks) ? variants[0].tasks.length : 7;
   const answers = {};
-  for (let v = 1; v <= 15; v++) {
-    for (let i = 1; i <= 7; i++) {
+  for (let v = 1; v <= nV; v++) {
+    for (let i = 1; i <= nT; i++) {
       const key = `vpr-ans-${v}-${i}`;
       const val = localStorage.getItem(key);
       if (val) answers[`${v}-${i}`] = val;
