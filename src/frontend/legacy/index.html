@@ -75,7 +75,7 @@ function showVariant(num) {
 
   // Shared text block for tasks 1-4
   if (t1 && t1.text_html) {
-    html += `<div class="text-block"><h3>Текст 1</h3>${t1.text_html}</div>`;
+    html += `<div class="text-block"><h3>Текст 1</h3>${balanceHtml(t1.text_html)}</div>`;
   }
 
   // Tasks 1-4 (share a common text)
@@ -99,14 +99,14 @@ function renderTask(t) {
   return `
     <div class="task">
       <div class="task-header">${cat}. ${escHtml(t.category)}</div>
-      <div class="task-content">${t.content_html}</div>
+      <div class="task-content">${balanceHtml(t.content_html)}</div>
       <textarea class="task-answer" placeholder="Введите ваш ответ..."></textarea>
       <div style="margin-top:8px">
         <button class="toggle-btn" onclick="toggleById('${id}-sol')">Показать пояснение</button>
         <button class="toggle-btn" onclick="toggleById('${id}-crit')">Показать критерии</button>
       </div>
-      <div id="${id}-sol" class="solution" style="display:none">${t.solution_html}</div>
-      <div id="${id}-crit" class="criteria" style="display:none">${t.criteria_html}</div>
+      <div id="${id}-sol" class="solution" style="display:none">${balanceHtml(t.solution_html)}</div>
+      <div id="${id}-crit" class="criteria" style="display:none">${balanceHtml(t.criteria_html)}</div>
     </div>`;
 }
 
@@ -121,6 +121,12 @@ function toggleById(id) {
     el.style.display = 'none';
     btn.textContent = btn.textContent.replace('Спрятать', 'Показать');
   }
+}
+
+function balanceHtml(html) {
+  const tmp = document.createElement('div');
+  tmp.innerHTML = html;
+  return tmp.innerHTML;
 }
 
 function escHtml(s) {
