@@ -208,7 +208,7 @@ async function requestAIReview(vNum) {
 
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 120000); // 2 min timeout
+    const timeout = setTimeout(() => controller.abort(), 360000); // 6 min timeout
 
     const resp = await fetch('/api/review', {
       method: 'POST',
@@ -272,21 +272,10 @@ async function requestAIReview(vNum) {
 }
 
 async function notifyModelOfReview(vNum) {
-  // Push a system notification that reaches the model but is displayed subtly
   const notification = {
     role: 'user',
     content: `[Система] Ученик только что завершил вариант ${vNum}. Результаты проверки записаны в матрицу прогресса (см. системный промпт выше). Найди в матрице прогресса запись с самой свежей датой завершения и баллами по темам К1–К7. Проанализируй прогресс ученика: какие темы идут хорошо, над какими нужно поработать. Сообщи ученику, что результаты его работы готовы, и дай краткий ободряющий комментарий о его прогрессе.`,
   };
-  chatMessages.push(notification);
-
-  // Render the notification subtly in chat
-  const el = document.getElementById('chat-messages');
-  const div = document.createElement('div');
-  div.className = 'chat-msg system-msg';
-  div.textContent = 'Работа проверена. Результаты под заданиями →';
-  el.appendChild(div);
-  saveChatHistory();
-  scrollChatToBottom();
 
   // Trigger assistant response
   addTypingIndicator();
@@ -318,6 +307,18 @@ async function notifyModelOfReview(vNum) {
       .join('\n');
 
     appendAssistantMessage(textBlocks || '(пустой ответ)');
+
+    // Push notification to history only after successful fetch
+    chatMessages.push(notification);
+
+    // Render the notification subtly in chat
+    const el = document.getElementById('chat-messages');
+    const div = document.createElement('div');
+    div.className = 'chat-msg system-msg';
+    div.textContent = 'Работа проверена. Результаты под заданиями →';
+    el.appendChild(div);
+    saveChatHistory();
+    scrollChatToBottom();
   } catch (e) {
     removeTypingIndicator();
     appendAssistantMessage('Результаты проверки готовы — смотри под заданиями в правой панели.');
@@ -420,8 +421,10 @@ function renderReviewBlocks(vNum) {
 }
 
 function pluralizeScore(n) {
-  if (n === 1) return '';
-  if (n >= 2 && n <= 4) return 'а';
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return '';
+  if (mod10 >= 2 && mod10 <= 4 && !(mod100 >= 12 && mod100 <= 14)) return 'а';
   return 'ов';
 }
 
