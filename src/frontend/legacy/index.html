@@ -29,7 +29,7 @@
 <div class="resize-handle" id="resize-handle"></div>
 
 <!-- ====== Right: Work panel (existing functionality) ====== -->
-<div class="work-panel">
+<div class="work-panel" id="work-panel">
 
 <header>
   <h1>Тренажёр ВПР по русскому языку</h1>
@@ -165,6 +165,206 @@ function saveChatHistory() {
     chatMessages = chatMessages.slice(-MAX_CHAT_MESSAGES);
   }
   localStorage.setItem(CHAT_HISTORY_KEY, JSON.stringify(chatMessages));
+}
+
+// ── AI review persistence ────────────────────────────────────────────────────
+
+function loadReviews(vNum) {
+  try {
+    return JSON.parse(localStorage.getItem(`vpr-review-${vNum}`)) || [];
+  } catch {
+    return [];
+  }
+}
+
+function saveReviews(vNum, reviews) {
+  localStorage.setItem(`vpr-review-${vNum}`, JSON.stringify(reviews));
+}
+
+// ── AI review request ────────────────────────────────────────────────────────
+
+async function requestAIReview(vNum) {
+  const apiKey = getApiKey();
+  if (!apiKey) {
+    showApiKeyModal();
+    return;
+  }
+
+  const v = variants.find(x => x.num === vNum);
+  if (!v) return;
+
+  // Build tasks array with student answers
+  const tasks = v.tasks.map(t => ({
+    issue: t.issue,
+    category: t.category,
+    content_html: t.content_html || '',
+    criteria_html: t.criteria_html || '',
+    solution_html: t.solution_html || '',
+    text_html: t.text_html || '',
+    student_answer: (document.getElementById(`ta-${vNum}-${t.issue}`) || {}).value || '',
+  }));
+
+  showReviewLoading();
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 120000); // 2 min timeout
+
+    const resp = await fetch('/api/review', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        apiKey: apiKey,
+        variantNum: vNum,
+        progressContext: buildTutorContext(),
+        tasks: tasks,
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    if (!resp.ok) {
+      const errText = await resp.text();
+      throw new Error(errText || `HTTP ${resp.status}`);
+    }
+
+    const data = await resp.json();
+
+    if (data.parse_error) {
+      // Show raw text as a single review under task 1
+      const rawReview = [{
+        issue: 0,
+        score: 0,
+        max_score: 0,
+        strengths: '',
+        weaknesses: '',
+        recommendation: 'Модель не смогла вернуть структурированную проверку. Вот её ответ:\n\n' + (data.raw_text || ''),
+        textbook_refs: [],
+      }];
+      saveReviews(vNum, rawReview);
+    } else {
+      saveReviews(vNum, data.reviews || []);
+      // Update progress with AI scores
+      const aiScores = {};
+      (data.reviews || []).forEach(r => {
+        if (r.issue >= 1 && r.issue <= 7) {
+          aiScores[r.issue] = r.score;
+        }
+      });
+      if (Object.keys(aiScores).length > 0) {
+        markVariantCompleted(vNum, aiScores);
+        renderProgressTable();
+      }
+    }
+
+    renderReviewBlocks(vNum);
+  } catch (e) {
+    if (e.name === 'AbortError') {
+      showReviewError('Проверка заняла слишком много времени. Попробуй ещё раз.');
+    } else {
+      showReviewError('Не удалось проверить работу: ' + e.message);
+    }
+  } finally {
+    hideReviewLoading();
+  }
+}
+
+function showReviewLoading() {
+  let overlay = document.getElementById('review-loading');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'review-loading';
+    overlay.className = 'review-loading-overlay';
+    overlay.innerHTML = `
+      <div class="review-loading-text">ИИ-репетитор проверяет твои ответы...</div>
+      <div class="review-loading-spinner"></div>
+    `;
+    const panel = document.getElementById('work-panel');
+    if (panel) panel.appendChild(overlay);
+  }
+  overlay.style.display = 'flex';
+}
+
+function hideReviewLoading() {
+  const overlay = document.getElementById('review-loading');
+  if (overlay) overlay.style.display = 'none';
+}
+
+function showReviewError(msg) {
+  for (let issue = 1; issue <= 7; issue++) {
+    const el = document.getElementById(`review-${currentVariant}-${issue}`);
+    if (el) {
+      el.style.display = 'block';
+      el.className = 'review-error';
+      el.textContent = msg;
+    }
+  }
+}
+
+// ── Review rendering ─────────────────────────────────────────────────────────
+
+function renderReviewBlocks(vNum) {
+  const reviews = loadReviews(vNum);
+
+  if (reviews.length === 0) return;
+
+  // Handle parse_error fallback (single raw-text review with issue=0)
+  if (reviews.length === 1 && reviews[0].issue === 0) {
+    for (let issue = 1; issue <= 7; issue++) {
+      const el = document.getElementById(`review-${vNum}-${issue}`);
+      if (el) {
+        el.style.display = 'block';
+        el.className = 'review-error';
+        el.textContent = reviews[0].recommendation;
+      }
+    }
+    return;
+  }
+
+  reviews.forEach(r => {
+    const el = document.getElementById(`review-${vNum}-${r.issue}`);
+    if (!el) return;
+
+    let scoreClass = 'low';
+    const ratio = r.max_score > 0 ? r.score / r.max_score : 0;
+    if (ratio >= 0.8) scoreClass = 'high';
+    else if (ratio >= 0.4) scoreClass = 'mid';
+
+    let html = '';
+
+    // Score badge
+    html += `<div class="review-score ${scoreClass}">${r.score} / ${r.max_score} балл${pluralizeScore(r.score)}</div>`;
+
+    if (r.strengths) {
+      html += `<div class="review-strengths">${escHtml(r.strengths)}</div>`;
+    }
+    if (r.weaknesses) {
+      html += `<div class="review-weaknesses">${escHtml(r.weaknesses)}</div>`;
+    }
+    if (r.recommendation) {
+      html += `<div class="review-recommendation">${escHtml(r.recommendation)}</div>`;
+    }
+
+    // Textbook references
+    const refs = r.textbook_refs || [];
+    if (refs.length > 0) {
+      html += '<div class="review-textbook-refs">Учебник: ';
+      refs.forEach(ref => {
+        html += `<span class="review-textbook-ref">${escHtml(ref.paragraph || '')} (ч. ${ref.part || '?'}, стр. ${ref.page || '?'})</span>`;
+      });
+      html += '</div>';
+    }
+
+    el.innerHTML = html;
+    el.style.display = 'block';
+    el.className = 'review-block';
+  });
+}
+
+function pluralizeScore(n) {
+  if (n === 1) return '';
+  if (n >= 2 && n <= 4) return 'а';
+  return 'ов';
 }
 
 // ── Build tutor context ─────────────────────────────────────────────────────
@@ -505,6 +705,7 @@ function renderTask(t, vNum) {
       <div class="task-header">${cat}. ${escHtml(t.category)}</div>
       <div class="task-content">${balanceHtml(t.content_html)}</div>
       <textarea id="${taId}" class="task-answer" placeholder="Введите ваш ответ..."></textarea>
+      <div id="review-${vNum}-${t.issue}" class="review-block" style="display:none"></div>
       <div style="margin-top:8px">
         <button class="save-btn" onclick="saveAnswer(${vNum},${t.issue})">Ответить</button>
         <button class="toggle-btn" onclick="toggleById('${id}-sol')">Показать пояснение</button>
@@ -568,6 +769,7 @@ function restoreAnswers(vNum) {
       ta.value = loadAnswer(vNum, issue);
     }
   }
+  renderReviewBlocks(vNum);
 }
 
 // Variant switching with confirmation
@@ -640,11 +842,13 @@ function scoreTask(vNum, issue) {
   return answer ? next : min;
 }
 
-function markVariantCompleted(vNum) {
+function markVariantCompleted(vNum, aiScores) {
   const prog = loadProgress();
   const scores = {};
   for (let issue = 1; issue <= 7; issue++) {
-    scores[issue] = scoreTask(vNum, issue);
+    scores[issue] = (aiScores && aiScores[issue] !== undefined)
+      ? aiScores[issue]
+      : scoreTask(vNum, issue);
   }
   prog[vNum] = {
     completed: new Date().toISOString(),
@@ -661,6 +865,7 @@ function finishWork() {
   markVariantCompleted(currentVariant);
   renderProgressTable();
   document.getElementById('progress-section').style.display = 'block';
+  requestAIReview(currentVariant);
 }
 
 function showProgress() {
@@ -766,6 +971,7 @@ function tick() {
     if (currentVariant) markVariantCompleted(currentVariant);
     renderProgressTable();
     document.getElementById('progress-section').style.display = 'block';
+    requestAIReview(currentVariant);
     alert('Время вышло. Работа завершена.');
   }
 }
