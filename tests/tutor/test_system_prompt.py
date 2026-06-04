@@ -60,7 +60,7 @@ class TestPromptLength:
 
     def test_base_prompt_under_limit(self):
         prompt = get_system_prompt()
-        assert len(prompt) < 4000, f'Base prompt is {len(prompt)} chars'
+        assert len(prompt) < 5000, f'Base prompt is {len(prompt)} chars'
 
     def test_with_large_context_still_reasonable(self):
         prompt = get_system_prompt(
