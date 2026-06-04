@@ -166,6 +166,28 @@ header p { color: var(--muted); margin: 0; }
     box-shadow: 0 0 3px rgba(0,0,102,0.2);
 }
 
+.save-btn {
+    display: inline-block;
+    margin-top: 10px;
+    padding: 6px 20px;
+    font-size: 15px;
+    cursor: pointer;
+    border: 1px solid #2a7d2a;
+    border-radius: 4px;
+    background: #e8f5e8;
+    color: #2a7d2a;
+    font-weight: bold;
+}
+
+.save-btn:hover { background: #c8e6c8; }
+
+.save-btn.saved {
+    background: #c8e6c8;
+    color: #1b5e1b;
+    border-color: #1b5e1b;
+    cursor: default;
+}
+
 .toggle-btn {
     display: inline-block;
     margin-top: 10px;

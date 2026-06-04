@@ -97,28 +97,31 @@ function showVariant(num) {
 
   // Tasks 1-4 (share a common text)
   tasks14.forEach(t => {
-    html += renderTask(t);
+    html += renderTask(t, num);
   });
 
   // Tasks 5-7
   tasks57.forEach(t => {
-    html += renderTask(t);
+    html += renderTask(t, num);
   });
 
   document.getElementById('content').innerHTML = html;
+  restoreAnswers(num);
 }
 
-function renderTask(t) {
+function renderTask(t, vNum) {
   const cats = ['К1', 'К2', 'К3', 'К4', 'К5', 'К6', 'К7'];
   const cat = cats[t.issue - 1] || '';
   const id = `task-${t.issue}`;
+  const taId = `ta-${vNum}-${t.issue}`;
 
   return `
     <div class="task">
       <div class="task-header">${cat}. ${escHtml(t.category)}</div>
       <div class="task-content">${balanceHtml(t.content_html)}</div>
-      <textarea class="task-answer" placeholder="Введите ваш ответ..."></textarea>
+      <textarea id="${taId}" class="task-answer" placeholder="Введите ваш ответ..."></textarea>
       <div style="margin-top:8px">
+        <button class="save-btn" onclick="saveAnswer(${vNum},${t.issue})">Ответить</button>
         <button class="toggle-btn" onclick="toggleById('${id}-sol')">Показать пояснение</button>
         <button class="toggle-btn" onclick="toggleById('${id}-crit')">Показать критерии</button>
       </div>
@@ -150,6 +153,36 @@ function escHtml(s) {
   const d = document.createElement('div');
   d.textContent = s;
   return d.innerHTML;
+}
+
+// Answer persistence
+function saveAnswer(vNum, issue) {
+  const ta = document.getElementById(`ta-${vNum}-${issue}`);
+  if (!ta) return;
+  const key = `vpr-ans-${vNum}-${issue}`;
+  localStorage.setItem(key, ta.value);
+  const btn = ta.parentElement.querySelector('.save-btn');
+  if (btn) {
+    btn.textContent = 'Сохранено ✓';
+    btn.classList.add('saved');
+    setTimeout(() => {
+      btn.textContent = 'Ответить';
+      btn.classList.remove('saved');
+    }, 1500);
+  }
+}
+
+function loadAnswer(vNum, issue) {
+  return localStorage.getItem(`vpr-ans-${vNum}-${issue}`) || '';
+}
+
+function restoreAnswers(vNum) {
+  for (let issue = 1; issue <= 7; issue++) {
+    const ta = document.getElementById(`ta-${vNum}-${issue}`);
+    if (ta) {
+      ta.value = loadAnswer(vNum, issue);
+    }
+  }
 }
 
 // Timer
