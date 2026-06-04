@@ -85,6 +85,15 @@ def parse_toc(text: str, part: int) -> list[dict]:
                 in_topic = True
             continue
 
+        # Catch topic-like lines without § or Повторение marker
+        page_num = _extract_trailing_page(stripped)
+        if page_num is not None:
+            title = _strip_page_number(stripped)
+            title = _clean_title(title)
+            topic = _make_topic(title, page_num, part)
+            current_subsection.append(topic) if current_subsection is not None else current_section.append(topic)
+            continue
+
     return entries
 
 

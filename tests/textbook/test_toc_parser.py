@@ -141,6 +141,23 @@ def test_parse_toc_part2_structure():
     assert len(topics) >= 3
 
 
+def test_parse_toc_unmarked_topic():
+    """Topic without § — e.g. 'Русский язык как развивающееся явление ... 4'."""
+    text = """
+СОДЕРЖАНИЕ
+
+Русский язык как развивающееся явление ...................                     4
+ПОВТОРЕНИЕ ИЗУЧЕННОГО В 5—6 КЛАССАХ
+§ 1. Синтаксис. Синтаксический разбор предложения 6
+"""
+    entries = parse_toc(text, part=1)
+    all_entries = _flatten(entries)
+    topics = [e for e in all_entries if e['type'] == 'topic']
+    titles = [t['title'] for t in topics]
+    assert any('Русский язык как развивающееся явление' in t for t in titles), \
+        f"Missing unmarked topic, got: {titles}"
+
+
 def _flatten(entries):
     result = []
     for e in entries:
