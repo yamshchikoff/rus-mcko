@@ -48,7 +48,11 @@ def parse_toc(text: str, part: int) -> list[dict]:
                 in_topic = False
                 continue
             elif _is_new_entry_start(stripped):
-                # Unexpected: topic without page number. Flush as-is.
+                # If pending topic starts with §, treat as continuation
+                if pending_topic_lines and re.match(r'^§', pending_topic_lines[0]):
+                    pending_topic_lines.append(stripped)
+                    continue
+                # Otherwise flush topic without page number and fall through
                 full_title = ' '.join(pending_topic_lines)
                 full_title = _clean_title(full_title)
                 topic = _make_topic(full_title, None, part)

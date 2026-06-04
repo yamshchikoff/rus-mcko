@@ -158,6 +158,27 @@ def test_parse_toc_unmarked_topic():
         f"Missing unmarked topic, got: {titles}"
 
 
+def test_parse_toc_section_topic_with_subsection_like_continuation():
+    """§ topic where continuation line looks like a subsection header."""
+    text = """
+СОДЕРЖАНИЕ
+
+МОРФОЛОГИЯ И ОРФОГРАФИЯ. КУЛЬТУРА РЕЧИ
+Причастие
+§ 18. Действительные причастия настоящего времени.
+Гласные в суффиксах действительных причастий на-
+стоящего времени ....................................................           58
+§ 19. Действительные причастия прошедшего времени                               61
+"""
+    entries = parse_toc(text, part=1)
+    all_entries = _flatten(entries)
+    topics = [e for e in all_entries if e['type'] == 'topic']
+    t18 = next((t for t in topics if t.get('number') == '§ 18'), None)
+    assert t18 is not None, '§ 18 not found'
+    assert 'Гласные в суффиксах' in t18['title'], f"Continuation missing: {t18['title']}"
+    assert t18['pdf_page'] == 59, f"Expected PDF page 59, got {t18['pdf_page']}"
+
+
 def _flatten(entries):
     result = []
     for e in entries:
