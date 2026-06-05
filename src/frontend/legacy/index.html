@@ -951,7 +951,8 @@ function restoreAnswers(vNum) {
 // Variant switching with confirmation
 function requestVariantSwitch(num) {
   if (num === currentVariant) return;
-  if (!currentVariant) {
+  // Only ask for confirmation if work is in progress (timer started or paused)
+  if (!currentVariant || (!timerRunning && timerElapsed === 0)) {
     showVariant(num);
     return;
   }
