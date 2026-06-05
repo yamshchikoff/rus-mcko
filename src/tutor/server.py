@@ -54,7 +54,7 @@ def _push_review_event(request_id: str, status: dict) -> None:
         q.put(status)
 
 
-def _get_or_get_or_create_review_queue(request_id: str) -> queue.Queue:
+def _get_or_create_review_queue(request_id: str) -> queue.Queue:
     with _review_queues_lock:
         q = _review_queues.get(request_id)
         if q is None:
@@ -386,7 +386,6 @@ class TutorHandler(BaseHTTPRequestHandler):
                 })
             finally:
                 _push_review_event(request_id, None)  # signal end-of-stream
-                _remove_review_queue(request_id)
 
         threading.Thread(target=run_review, daemon=True).start()
 
