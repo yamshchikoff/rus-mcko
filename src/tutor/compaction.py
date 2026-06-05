@@ -15,11 +15,21 @@ COMPACTION_TARGET = 500_000  # half of the window
 
 
 def estimate_tokens(messages: list[dict]) -> float:
-    """Rough token count: total chars / 3.5."""
+    """Rough token count: total chars / 3.5.
+
+    Handles both string and list-type content (the latter occurs after
+    tool-use rounds where content is a list of tool_use/tool_result blocks).
+    """
+    import json as _json
     total = 0
     for m in messages:
         content = m.get("content", "")
-        if content:
+        if isinstance(content, list):
+            for block in content:
+                # Each block is a dict like {"type": "tool_use", ...}
+                # Serialise to JSON for an accurate char count
+                total += len(_json.dumps(block, ensure_ascii=False))
+        elif content:
             total += len(content)
     return total / 3.5
 
@@ -50,13 +60,13 @@ def compact_history(
     if budget <= 0:
         return system
 
-    # Walk from the end, keep the last N messages that fit
+    # Walk from the end, keep as many recent messages as fit.
+    # Skip messages that are individually too large rather than stopping
+    # entirely — this avoids leaving unused token budget.
     kept: list[dict] = []
     for m in reversed(rest):
         trial = [m] + kept
         if estimate_tokens(trial) <= budget:
             kept = trial
-        else:
-            break
 
     return system + kept

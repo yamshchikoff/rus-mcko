@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 
 STATIC_ROOT = Path(__file__).resolve().parent.parent / "frontend" / "legacy"
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+DATA_ROOT = PROJECT_ROOT / "data"
 DEFAULT_TEXTBOOK_PATH = PROJECT_ROOT / "data" / "textbook" / "textbook.json"
 
 # ── Textbook loading ────────────────────────────────────────────────────────
@@ -289,9 +290,9 @@ class TutorHandler(BaseHTTPRequestHandler):
         if path == "/" or path == "":
             path = "/index.html"
 
-        # Data files live under the project root
+        # Data files are served from DATA_ROOT only
         if path.startswith("/data/"):
-            file_path = PROJECT_ROOT / path.lstrip("/")
+            file_path = DATA_ROOT / path[len("/data/"):]
         else:
             file_path = STATIC_ROOT / path.lstrip("/")
 
@@ -299,12 +300,16 @@ class TutorHandler(BaseHTTPRequestHandler):
             self.send_error(404)
             return
 
-        # Path traversal guard
+        # Path traversal guard: ensure resolved path stays within its root
         resolved = file_path.resolve()
-        if not (str(resolved).startswith(str(STATIC_ROOT.resolve())) or
-                str(resolved).startswith(str(PROJECT_ROOT.resolve()))):
-            self.send_error(403)
-            return
+        if path.startswith("/data/"):
+            if not str(resolved).startswith(str(DATA_ROOT.resolve())):
+                self.send_error(403)
+                return
+        else:
+            if not str(resolved).startswith(str(STATIC_ROOT.resolve())):
+                self.send_error(403)
+                return
 
         content_type = self._guess_mime(file_path.suffix)
         body = file_path.read_bytes()

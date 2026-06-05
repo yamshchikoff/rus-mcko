@@ -101,6 +101,17 @@
   </div>
 </div>
 
+<!-- Finish-work confirmation modal -->
+<div id="finish-modal" class="modal-overlay" style="display:none">
+  <div class="modal-box">
+    <p class="modal-text">Завершить работу и посмотреть результаты?</p>
+    <div class="modal-buttons">
+      <button class="modal-btn modal-btn-yes" onclick="doFinish()">Да</button>
+      <button class="modal-btn modal-btn-no" onclick="cancelFinish()">Нет</button>
+    </div>
+  </div>
+</div>
+
 <!-- API key modal -->
 <div id="api-key-modal" class="api-key-modal" style="display:none">
   <div class="api-key-box">
@@ -122,6 +133,7 @@ const MAX_CHAT_MESSAGES = 100;
 
 let chatMessages = [];
 let isStreaming = false;
+let isReviewInProgress = false;
 
 // ── API key management ──────────────────────────────────────────────────────
 
@@ -139,7 +151,6 @@ function showApiKeyModal() {
 }
 
 function hideApiKeyModal() {
-  if (!hasApiKey()) return; // must set key on first run
   document.getElementById('api-key-modal').style.display = 'none';
 }
 
@@ -164,7 +175,11 @@ function saveChatHistory() {
   if (chatMessages.length > MAX_CHAT_MESSAGES) {
     chatMessages = chatMessages.slice(-MAX_CHAT_MESSAGES);
   }
-  localStorage.setItem(CHAT_HISTORY_KEY, JSON.stringify(chatMessages));
+  try {
+    localStorage.setItem(CHAT_HISTORY_KEY, JSON.stringify(chatMessages));
+  } catch {
+    // Quota exceeded — silently degrade, oldest messages already trimmed
+  }
 }
 
 // ── AI review persistence ────────────────────────────────────────────────────
@@ -178,7 +193,9 @@ function loadReviews(vNum) {
 }
 
 function saveReviews(vNum, reviews) {
-  localStorage.setItem(`vpr-review-${vNum}`, JSON.stringify(reviews));
+  try {
+    localStorage.setItem(`vpr-review-${vNum}`, JSON.stringify(reviews));
+  } catch { /* quota exceeded — silently degrade */ }
 }
 
 // ── AI review request ────────────────────────────────────────────────────────
@@ -187,11 +204,15 @@ async function requestAIReview(vNum) {
   const apiKey = getApiKey();
   if (!apiKey) {
     showApiKeyModal();
+    isReviewInProgress = false;
     return;
   }
 
   const v = variants.find(x => x.num === vNum);
-  if (!v) return;
+  if (!v) {
+    isReviewInProgress = false;
+    return;
+  }
 
   // Build tasks array with student answers
   const tasks = v.tasks.map(t => ({
@@ -268,6 +289,7 @@ async function requestAIReview(vNum) {
     }
   } finally {
     hideReviewLoading();
+    isReviewInProgress = false;
   }
 }
 
@@ -276,6 +298,16 @@ async function notifyModelOfReview(vNum) {
     role: 'user',
     content: `[Система] Ученик только что завершил вариант ${vNum}. Результаты проверки записаны в матрицу прогресса (см. системный промпт выше). Найди в матрице прогресса запись с самой свежей датой завершения и баллами по темам К1–К7. Проанализируй прогресс ученика: какие темы идут хорошо, над какими нужно поработать. Сообщи ученику, что результаты его работы готовы, и дай краткий ободряющий комментарий о его прогрессе.`,
   };
+
+  // Push notification to history before fetch so the model sees it
+  chatMessages.push(notification);
+
+  // Render the notification in chat first
+  const el = document.getElementById('chat-messages');
+  const div = document.createElement('div');
+  div.className = 'chat-msg system-msg';
+  div.textContent = 'Работа проверена. Результаты под заданиями →';
+  el.appendChild(div);
 
   // Trigger assistant response
   addTypingIndicator();
@@ -307,16 +339,6 @@ async function notifyModelOfReview(vNum) {
       .join('\n');
 
     appendAssistantMessage(textBlocks || '(пустой ответ)');
-
-    // Push notification to history only after successful fetch
-    chatMessages.push(notification);
-
-    // Render the notification subtly in chat
-    const el = document.getElementById('chat-messages');
-    const div = document.createElement('div');
-    div.className = 'chat-msg system-msg';
-    div.textContent = 'Работа проверена. Результаты под заданиями →';
-    el.appendChild(div);
     saveChatHistory();
     scrollChatToBottom();
   } catch (e) {
@@ -807,7 +829,9 @@ function saveAnswer(vNum, issue) {
   const ta = document.getElementById(`ta-${vNum}-${issue}`);
   if (!ta) return;
   const key = `vpr-ans-${vNum}-${issue}`;
-  localStorage.setItem(key, ta.value);
+  try {
+    localStorage.setItem(key, ta.value);
+  } catch { /* quota exceeded */ }
   const btn = ta.parentElement.querySelector('.save-btn');
   if (btn) {
     btn.textContent = 'Сохранено ✓';
@@ -870,7 +894,9 @@ function loadProgress() {
 }
 
 function saveProgress(prog) {
-  localStorage.setItem('vpr-progress', JSON.stringify(prog));
+  try {
+    localStorage.setItem('vpr-progress', JSON.stringify(prog));
+  } catch { /* quota exceeded — silently degrade */ }
 }
 
 function parseScores(criteriaHtml) {
@@ -920,10 +946,21 @@ function markVariantCompleted(vNum, aiScores) {
 
 function finishWork() {
   if (!currentVariant) return;
-  if (!confirm('Завершить работу и посмотреть результаты?')) return;
+  if (isReviewInProgress) return;
+  document.getElementById('finish-modal').style.display = 'flex';
+}
+
+function doFinish() {
+  document.getElementById('finish-modal').style.display = 'none';
+  if (isReviewInProgress) return;
+  isReviewInProgress = true;
   if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
   timerRunning = false;
   requestAIReview(currentVariant);
+}
+
+function cancelFinish() {
+  document.getElementById('finish-modal').style.display = 'none';
 }
 
 function showProgress() {
@@ -1023,9 +1060,11 @@ function tick() {
   timerElapsed++;
   updateTimerDisplay();
   if (timerElapsed >= TOTAL_SEC) {
+    if (isReviewInProgress) return;
     clearInterval(timerInterval);
     timerInterval = null;
     timerRunning = false;
+    isReviewInProgress = true;
     requestAIReview(currentVariant);
     alert('Время вышло. Работа завершена.');
   }
