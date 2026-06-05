@@ -15,8 +15,11 @@
 <div class="chat-panel" id="chat-panel">
   <div class="chat-header">
     <h2>ИИ-репетитор</h2>
+    <button class="toggle-btn" onclick="exportChatHistory()" style="margin:0;font-size:11px" title="Скачать историю чата">💾</button>
+    <button class="toggle-btn" onclick="importChatHistory()" style="margin:0;font-size:11px" title="Загрузить историю чата">📂</button>
     <button class="chat-settings-btn" onclick="showApiKeyModal()" title="Настройки API">⚙</button>
   </div>
+  <input type="file" id="chat-file-input" accept=".json" style="display:none" onchange="handleChatFile(event)">
   <div class="chat-messages" id="chat-messages">
     <div class="chat-msg assistant">Привет! Я ИИ-репетитор по русскому языку. Выбери вариант и задание — я помогу разобраться.</div>
   </div>
@@ -71,8 +74,10 @@
   <div style="display:flex;justify-content:space-between;align-items:center">
     <h2>Прогресс</h2>
     <button class="toggle-btn" onclick="exportProgress()" style="margin:0">Скачать</button>
+    <button class="toggle-btn" onclick="importProgress()" style="margin:0">Загрузить</button>
     <button class="toggle-btn" onclick="hideProgress()" style="margin:0">Скрыть</button>
   </div>
+  <input type="file" id="progress-file-input" accept=".json" style="display:none" onchange="handleProgressFile(event)">
   <div id="progress-table"></div>
 </section>
 
@@ -227,6 +232,62 @@ function saveChatHistory() {
   } catch {
     // Quota exceeded — silently degrade, oldest messages already trimmed
   }
+}
+
+function exportChatHistory() {
+  const blob = new Blob(
+    [JSON.stringify({
+      exported: new Date().toISOString(),
+      currentVariant: currentVariant || 0,
+      messages: chatMessages.filter(function(m) { return m.role !== 'typing'; })
+    }, null, 2)],
+    { type: 'application/json' }
+  );
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'vpr-chat.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function importChatHistory() {
+  document.getElementById('chat-file-input').click();
+}
+
+function handleChatFile(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (!data || typeof data !== 'object' || !Array.isArray(data.messages)) {
+        alert('Неверный формат файла: отсутствует история сообщений.');
+        return;
+      }
+      for (let i = 0; i < data.messages.length; i++) {
+        const m = data.messages[i];
+        if (!m || typeof m !== 'object' || !m.role || !m.content) {
+          alert('Сообщение ' + (i + 1) + ' имеет неверный формат.');
+          return;
+        }
+        if (m.role !== 'user' && m.role !== 'assistant') {
+          alert('Сообщение ' + (i + 1) + ': роль должна быть user или assistant.');
+          return;
+        }
+      }
+      chatMessages = data.messages;
+      saveChatHistory();
+      renderChatHistory();
+    } catch (err) {
+      alert('Не удалось прочитать файл: ' + err.message);
+    }
+  };
+  reader.onerror = function() {
+    alert('Не удалось прочитать файл.');
+  };
+  reader.readAsText(file);
+  event.target.value = '';
 }
 
 // ── AI review persistence ────────────────────────────────────────────────────
@@ -1231,6 +1292,44 @@ function exportProgress() {
   a.download = 'vpr-progress.json';
   a.click();
   URL.revokeObjectURL(a.href);
+}
+
+function importProgress() {
+  document.getElementById('progress-file-input').click();
+}
+
+function handleProgressFile(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (!data || typeof data !== 'object' || !data.progress) {
+        alert('Неверный формат файла: отсутствуют данные прогресса.');
+        return;
+      }
+      // Restore progress
+      saveProgress(data.progress);
+      // Restore answers
+      if (data.answers && typeof data.answers === 'object') {
+        for (const [key, val] of Object.entries(data.answers)) {
+          try {
+            localStorage.setItem('vpr-ans-' + key, String(val));
+          } catch { /* quota */ }
+        }
+      }
+      renderProgressTable();
+    } catch (err) {
+      alert('Не удалось прочитать файл: ' + err.message);
+    }
+  };
+  reader.onerror = function() {
+    alert('Не удалось прочитать файл.');
+  };
+  reader.readAsText(file);
+  // Reset input so the same file can be re-imported
+  event.target.value = '';
 }
 
 
