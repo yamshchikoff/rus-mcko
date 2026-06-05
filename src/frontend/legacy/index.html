@@ -349,7 +349,8 @@ async function requestAIReview(vNum) {
               }
             }
             renderReviewBlocks(vNum);
-            notifyModelOfReview(vNum).then(resolve, reject);
+            resolve();
+            notifyModelOfReview(vNum).catch(e => console.warn('notifyModelOfReview failed:', e));
           }
 
           if (status.step === 'error') {
