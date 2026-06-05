@@ -1,21 +1,6 @@
 services:
-  traefik:
-    image: traefik:v3.7
-    restart: always
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
-      - ./traefik/data:/data
-
   app:
     build: .
     restart: always
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.app.rule=Host(`rusrobotrain.ru`)"
-      - "traefik.http.routers.app.entrypoints=websecure"
-      - "traefik.http.routers.app.tls.certresolver=letsencrypt"
-      - "traefik.http.services.app.loadbalancer.server.port=8080"
+    ports:
+      - "80:8080"

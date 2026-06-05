@@ -14,7 +14,7 @@
 - ИИ-репетитор с опорой на учебник (Баранов, Ладыженская, 2022)
 - Таблица прогресса 15×7, сохранение в браузере
 
-## Запуск
+## Разработка
 
 ```bash
 python3 src/tutor/server.py --port 8080
@@ -22,36 +22,100 @@ python3 src/tutor/server.py --port 8080
 
 Открыть `http://localhost:8080`, ввести API-ключ DeepSeek.
 
-## Docker
+### Docker (только HTTP)
 
 ```bash
-# Сборка и запуск (HTTP + HTTPS через Traefik)
 docker compose up -d
-
-# или без HTTPS — только HTTP на порту 80
-docker build -t rus-mcko .
-docker run -d --restart always -p 80:8080 rus-mcko
 ```
 
-При запуске через `docker compose` Traefik автоматически получает сертификат Let's Encrypt для домена из `compose.yml`. Замени `rusrobotrain.ru` на свой домен в секции `labels` сервиса `app`. Почта для Let's Encrypt — в `traefik/traefik.yml`.
+Сервис на `http://localhost`. Сборка и запуск в один шаг.
 
-### Деплой на Яндекс.Облако
+## Деплой на Яндекс.Облако
 
-1. Подними ВМ с Ubuntu 24.04, зарезервируй статический IP, привяжи домен (A-запись → IP).
+На ВМ создаётся отдельный `compose.yml` на уровень выше репозитория — с Traefik и HTTPS.
+
+Структура на ВМ:
+
+```
+~/rus-mcko/
+  compose.yml            # деплойный композ
+  traefik/
+    traefik.yml          # конфиг Traefik
+    data/                # сертификаты (авто)
+  app/                   # git clone репозитория
+```
+
+1. ВМ с Ubuntu 24.04, статический IP, домен (A-запись → IP).
 2. Установи Docker:
    ```bash
    sudo apt update && sudo apt install -y docker.io
    sudo usermod -aG docker $USER
    # выйди и зайди заново
    ```
-3. Склонируй репозиторий и запусти:
+3. Создай деплойную структуру:
    ```bash
+   mkdir -p ~/rus-mcko/traefik/data
+   cd ~/rus-mcko
    git clone <repo-url> app
-   cd app
+   ```
+4. Создай `compose.yml`:
+   ```yaml
+   services:
+     traefik:
+       image: traefik:v3.7
+       restart: always
+       ports:
+         - "80:80"
+         - "443:443"
+       volumes:
+         - /var/run/docker.sock:/var/run/docker.sock:ro
+         - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+         - ./traefik/data:/data
+
+     app:
+       build: ./app
+       restart: always
+       labels:
+         - "traefik.enable=true"
+         - "traefik.http.routers.app.rule=Host(`rusrobotrain.ru`)"
+         - "traefik.http.routers.app.entrypoints=websecure"
+         - "traefik.http.routers.app.tls.certresolver=letsencrypt"
+         - "traefik.http.services.app.loadbalancer.server.port=8080"
+   ```
+5. Создай `traefik/traefik.yml` (замени `me@yamshchikov.ru` и домен):
+   ```yaml
+   entryPoints:
+     web:
+       address: ":80"
+       http:
+         redirections:
+           entryPoint:
+             to: websecure
+             scheme: https
+             permanent: true
+     websecure:
+       address: ":443"
+
+   certificatesResolvers:
+     letsencrypt:
+       acme:
+         email: me@yamshchikov.ru
+         storage: /data/acme.json
+         httpChallenge:
+           entryPoint: web
+
+   providers:
+     docker:
+       exposedByDefault: false
+   ```
+6. Запусти:
+   ```bash
+   cd ~/rus-mcko
    docker compose up -d
    ```
+7. Открой порты 80 и 443 в группе безопасности Яндекс.Облака.
 
-Сервис будет доступен по `https://<домен>`. Traefik сам получит и будет обновлять сертификат Let's Encrypt. Сертификаты хранятся в `traefik/data/acme.json`.
+Сервис будет доступен по `https://rusrobotrain.ru`. Traefik сам получит и будет обновлять сертификат Let's Encrypt.
 
 ## Стек
 
