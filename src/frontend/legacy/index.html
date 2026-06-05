@@ -311,7 +311,7 @@ async function requestAIReview(vNum) {
       }
 
       const status = await statusResp.json();
-      updateReviewLoading(status);
+      appendReviewLog(status);
       if (status.usage) {
         const u = status.usage;
         if ((!u.input_tokens && !u.output_tokens) && status.est_input) {
@@ -370,47 +370,6 @@ async function requestAIReview(vNum) {
   }
 }
 
-// ── Review status display ──────────────────────────────────────────────────
-
-const _statusMessages = {
-  starting: 'Начинаю проверку...',
-  submitted: 'Отправил 7 заданий на проверку',
-  processing: 'Модель анализирует ответы...',
-  sending: 'Отправляю запрос к API...',
-  received: 'Получен ответ от модели',
-  tool: 'Обращаюсь к учебнику...',
-  parsing: 'Обрабатываю результаты...',
-};
-
-function updateReviewLoading(status) {
-  const el = document.getElementById('review-loading-text');
-  if (!el) return;
-
-  const step = status.step;
-  let text = _statusMessages[step] || 'Проверяю...';
-
-  if (step === 'processing' && status.iteration) {
-    text = `Модель анализирует ответы (запрос ${status.iteration})...`;
-  } else if (step === 'sending' && status.iteration) {
-    text = `Отправляю запрос ${status.iteration} к API (~${status.est_input || '?'} токенов)...`;
-  } else if (step === 'received' && status.iteration) {
-    text = `Получен ответ (запрос ${status.iteration}): +${status.iter_input || 0}↑/${status.iter_output || 0}↓ токенов`;
-  } else if (step === 'tool') {
-    const name = status.name;
-    const inp = status.input || {};
-    if (name === 'get_page') {
-      text = `Читаю учебник: часть ${inp.part || '?'}, стр. ${inp.page || '?'}...`;
-    } else if (name === 'show_toc') {
-      text = 'Просматриваю оглавление учебника...';
-    } else {
-      text = `Обращаюсь к учебнику (${name || '?'})...`;
-    }
-  } else if (step === 'submitted' && status.task_count) {
-    text = `Отправил ${status.task_count} заданий на проверку`;
-  }
-
-  el.textContent = text;
-}
 
 async function notifyModelOfReview(vNum) {
   const notification = {
@@ -476,12 +435,15 @@ function showReviewLoading() {
     overlay.id = 'review-loading';
     overlay.className = 'review-loading-overlay';
     overlay.innerHTML = `
-      <div class="review-loading-text" id="review-loading-text">ИИ-репетитор проверяет твои ответы...</div>
+      <div class="review-log" id="review-log"></div>
       <div class="review-loading-spinner"></div>
     `;
     const panel = document.getElementById('work-panel');
     if (panel) panel.appendChild(overlay);
   }
+  // Clear previous log
+  const log = document.getElementById('review-log');
+  if (log) log.innerHTML = '';
   overlay.style.display = 'flex';
 }
 
@@ -499,6 +461,80 @@ function showReviewError(msg) {
       el.textContent = msg;
     }
   }
+}
+
+// ── Review log ──────────────────────────────────────────────────────────────
+
+function _pad(n) { return n < 10 ? '0' + n : String(n); }
+
+function _timeNow() {
+  const d = new Date();
+  return _pad(d.getHours()) + ':' + _pad(d.getMinutes()) + ':' + _pad(d.getSeconds());
+}
+
+function _tokenBadge(status) {
+  const u = status.usage;
+  if (!u) return '';
+  const i = u.input_tokens || 0;
+  const o = u.output_tokens || 0;
+  if (i === 0 && o === 0) {
+    if (status.est_input) return '~' + status.est_input + '↑';
+    return '';
+  }
+  return i + '↑/' + o + '↓';
+}
+
+function appendReviewLog(status) {
+  const log = document.getElementById('review-log');
+  if (!log) return;
+
+  const step = status.step;
+  let msg = '';
+  let iter = status.iteration || '';
+
+  if (step === 'starting') {
+    msg = 'Начинаю проверку...';
+  } else if (step === 'submitted') {
+    msg = 'Отправил ' + (status.task_count || 7) + ' заданий на проверку';
+  } else if (step === 'processing') {
+    msg = 'Модель анализирует ответы' + (iter ? ' (запрос ' + iter + ')' : '') + '...';
+  } else if (step === 'sending') {
+    msg = 'Отправляю запрос ' + (iter || '?') + ' к API';
+    if (status.est_input) msg += ' (~' + status.est_input + ' токенов)';
+  } else if (step === 'received') {
+    msg = 'Ответ ' + (iter || '?') + ': +' + (status.iter_input || 0) + '↑/' + (status.iter_output || 0) + '↓ токенов';
+  } else if (step === 'tool') {
+    const name = status.name || '?';
+    if (name === 'get_page') {
+      const inp = status.input || {};
+      msg = 'Учебник: часть ' + (inp.part || '?') + ', стр. ' + (inp.page || '?');
+    } else if (name === 'show_toc') {
+      msg = 'Просматриваю оглавление';
+    } else {
+      msg = 'Инструмент: ' + name;
+    }
+  } else if (step === 'parsing') {
+    msg = 'Обрабатываю результаты...';
+  } else if (step === 'done') {
+    msg = 'Проверка завершена';
+  } else if (step === 'error') {
+    msg = 'Ошибка: ' + (status.message || 'неизвестно');
+  } else {
+    msg = step;
+  }
+
+  const badge = _tokenBadge(status);
+
+  const entry = document.createElement('div');
+  entry.className = 'review-log-entry';
+  entry.innerHTML =
+    '<span class="review-log-time">' + _timeNow() + '</span>' +
+    '<span class="review-log-msg">' + escHtml(msg) + '</span>' +
+    (badge ? '<span class="review-log-tokens">' + badge + '</span>' : '');
+  log.appendChild(entry);
+
+  // Auto-scroll to bottom
+  log.scrollTop = log.scrollHeight;
 }
 
 // ── Review rendering ─────────────────────────────────────────────────────────
