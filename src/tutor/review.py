@@ -244,7 +244,9 @@ def execute_review(
             "max_tokens": MAX_TOKENS,
         }
 
-        _emit("sending", iteration=iteration + 1, usage=dict(total_usage))
+        _emit("sending", iteration=iteration + 1,
+              est_input=round(len(json.dumps(body, ensure_ascii=False)) / 3.5),
+              usage=dict(total_usage))
         try:
             resp = requests.post(url, headers=headers, json=body, timeout=60)
             resp.raise_for_status()

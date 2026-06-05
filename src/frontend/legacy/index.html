@@ -157,7 +157,9 @@ function updateTokenBar(status, usage) {
   const statusEl = document.getElementById('token-status');
   if (!countEl || !statusEl) return;
 
-  if (usage && usage.input_tokens !== undefined && (usage.input_tokens > 0 || usage.output_tokens > 0)) {
+  if (usage && usage._est_input) {
+    countEl.textContent = '~' + usage._est_input + ' ↑ / ... ↓';
+  } else if (usage && usage.input_tokens !== undefined && (usage.input_tokens > 0 || usage.output_tokens > 0)) {
     countEl.textContent = usage.input_tokens + ' ↑ / ' + usage.output_tokens + ' ↓';
   } else {
     let totalChars = SYSTEM_PROMPT_CHARS;
@@ -310,7 +312,13 @@ async function requestAIReview(vNum) {
 
       const status = await statusResp.json();
       updateReviewLoading(status);
-      if (status.usage) updateTokenBar('↻ проверка...', status.usage);
+      if (status.usage) {
+        const u = status.usage;
+        if ((!u.input_tokens && !u.output_tokens) && status.est_input) {
+          u._est_input = status.est_input;
+        }
+        updateTokenBar('↻ проверка...', u);
+      }
 
       if (status.step === 'done') {
         const data = status; // result is inlined in the status dict
@@ -384,7 +392,7 @@ function updateReviewLoading(status) {
   if (step === 'processing' && status.iteration) {
     text = `Модель анализирует ответы (запрос ${status.iteration})...`;
   } else if (step === 'sending' && status.iteration) {
-    text = `Отправляю запрос ${status.iteration} к API...`;
+    text = `Отправляю запрос ${status.iteration} к API (~${status.est_input || '?'} токенов)...`;
   } else if (step === 'received' && status.iteration) {
     text = `Получен ответ (запрос ${status.iteration}): +${status.iter_input || 0}↑/${status.iter_output || 0}↓ токенов`;
   } else if (step === 'tool') {
