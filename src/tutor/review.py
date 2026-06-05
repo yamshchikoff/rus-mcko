@@ -278,7 +278,6 @@ def execute_review(
                     text_blocks.append(c.get("text", ""))
             result = parse_review_response("\n".join(text_blocks))
             result["usage"] = total_usage
-            _emit("done", usage=dict(total_usage))
             return result
 
         # Extract tool_use blocks and execute
@@ -291,7 +290,6 @@ def execute_review(
                     text_blocks.append(c.get("text", ""))
             result = parse_review_response("\n".join(text_blocks))
             result["usage"] = total_usage
-            _emit("done", usage=dict(total_usage))
             return result
 
         for tc in tool_calls:
@@ -309,5 +307,4 @@ def execute_review(
             text_blocks.append(c.get("text", ""))
     result = parse_review_response("\n".join(text_blocks))
     result["usage"] = total_usage
-    _emit("done", usage=dict(total_usage))
     return result
