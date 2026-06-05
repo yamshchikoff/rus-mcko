@@ -523,6 +523,26 @@ sup { font-size: 0.75em; }
 .chat-msg em { font-style: italic; }
 .chat-msg ul, .chat-msg ol { padding-left: 20px; margin: 0.3em 0; }
 .chat-msg li { margin: 0.15em 0; }
+.chat-msg h1, .chat-msg h2, .chat-msg h3,
+.chat-msg h4, .chat-msg h5, .chat-msg h6 {
+    margin: 0.5em 0 0.25em;
+    line-height: 1.3;
+}
+.chat-msg table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+    border-collapse: collapse;
+}
+.chat-msg th, .chat-msg td {
+    border: 1px solid #ccc;
+    padding: 4px 8px;
+    text-align: left;
+}
+.chat-msg th {
+    background: #f0f0f0;
+    font-weight: 600;
+}
 
 .chat-input-area {
     display: flex;
