@@ -923,9 +923,6 @@ function finishWork() {
   if (!confirm('Завершить работу и посмотреть результаты?')) return;
   if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
   timerRunning = false;
-  markVariantCompleted(currentVariant);
-  renderProgressTable();
-  document.getElementById('progress-section').style.display = 'block';
   requestAIReview(currentVariant);
 }
 
@@ -1029,9 +1026,6 @@ function tick() {
     clearInterval(timerInterval);
     timerInterval = null;
     timerRunning = false;
-    if (currentVariant) markVariantCompleted(currentVariant);
-    renderProgressTable();
-    document.getElementById('progress-section').style.display = 'block';
     requestAIReview(currentVariant);
     alert('Время вышло. Работа завершена.');
   }
