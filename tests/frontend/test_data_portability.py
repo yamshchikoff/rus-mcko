@@ -435,9 +435,32 @@ class TestFrontendIntegration:
     def test_importChatHistory_uses_FileReader(self, js):
         """importChatHistory() uses FileReader to read the selected file."""
         body = INDEX_HTML.read_text(encoding="utf-8")
-        # FileReader should appear in the inline script
         inline = re.search(r"<script(?![^>]*src=)[^>]*>(.*?)</script>", body, re.DOTALL)
         assert inline, "No inline script block"
-        # Count FileReader occurrences — need at least 2 (progress + chat import)
         count = inline.group(1).count("FileReader")
         assert count >= 2, f"Expected >= 2 FileReader usages, found {count}"
+
+    def test_progress_validates_typeof_object(self, js):
+        """handleProgressFile checks typeof data.progress to reject non-objects."""
+        assert re.search(r'typeof\s+data\.progress\s*[!=]==?\s*[\x27\x22]object[\x27\x22]', js), \
+            "handleProgressFile must check typeof data.progress === 'object'"
+
+    def test_progress_rejects_array_as_progress(self, js):
+        """handleProgressFile rejects arrays (Array.isArray) as progress."""
+        assert 'Array.isArray' in js, \
+            "handleProgressFile must use Array.isArray to reject array-as-progress"
+
+    def test_answer_keys_validated_by_regex(self, js):
+        """handleProgressFile validates answer keys with \\d+-\\d+ regex."""
+        assert re.search(r'[/\x27\x22]\^?\\\\d\+-\\\\d\+', js) or re.search(r'\\d\+\-\\d\+', js), \
+            "handleProgressFile must validate answer key format with regex"
+
+    def test_chat_content_validates_typeof_string(self, js):
+        """handleChatFile checks typeof m.content === 'string'."""
+        assert re.search(r'typeof\s+m\.content\s*[!=]==?\s*[\x27\x22]string[\x27\x22]', js), \
+            "handleChatFile must check typeof m.content === 'string'"
+
+    def test_chat_role_validates_typeof_string(self, js):
+        """handleChatFile checks typeof m.role === 'string'."""
+        assert re.search(r'typeof\s+m\.role\s*[!=]==?\s*[\x27\x22]string[\x27\x22]', js), \
+            "handleChatFile must check typeof m.role === 'string'"
