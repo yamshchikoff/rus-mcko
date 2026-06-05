@@ -110,10 +110,11 @@ def run_tool_use_loop(
     max_iterations: int = MAX_TOOL_ITERATIONS,
     progress_context: str = "",
     current_task: str = "",
-) -> dict:
+) -> tuple[dict, dict]:
     """Send messages to DeepSeek, handling tool-use callbacks up to *max_iterations*.
 
-    Returns the final assistant message dict (with stop_reason='end_turn').
+    Returns (final_message, total_usage) where total_usage aggregates input/output
+    tokens across all iterations of the tool-use loop.
     """
     url = DEEPSEEK_URL
     headers = {
@@ -127,6 +128,8 @@ def run_tool_use_loop(
         current_task=current_task,
     )
 
+    total_usage = {"input_tokens": 0, "output_tokens": 0}
+
     for _ in range(max_iterations):
         # Compact before each call
         compacted = compact_history(messages)
@@ -136,7 +139,7 @@ def run_tool_use_loop(
             "system": system_prompt,
             "messages": compacted,
             "tools": tools,
-            "stream": False,  # non-streaming for tool-use loop; streaming on final
+            "stream": False,
             "max_tokens": MAX_TOKENS,
         }
 
@@ -144,13 +147,18 @@ def run_tool_use_loop(
         resp.raise_for_status()
         msg = resp.json()
 
+        # Accumulate usage from this API call
+        usage = msg.get("usage", {})
+        total_usage["input_tokens"] += usage.get("input_tokens", 0)
+        total_usage["output_tokens"] += usage.get("output_tokens", 0)
+
         if msg.get("stop_reason") != "tool_use":
-            return msg
+            return msg, total_usage
 
         # Extract tool_use blocks
         tool_calls = [c for c in msg.get("content", []) if c.get("type") == "tool_use"]
         if not tool_calls:
-            return msg
+            return msg, total_usage
 
         # Execute tools
         tool_results = execute_tools(tool_calls, textbook)
@@ -160,7 +168,7 @@ def run_tool_use_loop(
         messages.append({"role": "user", "content": tool_results})
 
     # Ran out of iterations — return last response
-    return msg
+    return msg, total_usage
 
 
 # ── HTTP handler ────────────────────────────────────────────────────────────
@@ -251,7 +259,7 @@ class TutorHandler(BaseHTTPRequestHandler):
         tb = self.get_textbook()
 
         try:
-            final_msg = run_tool_use_loop(
+            final_msg, usage = run_tool_use_loop(
                 api_key, messages, tools, tb,
                 progress_context=progress_context,
                 current_task=current_task,
@@ -270,8 +278,11 @@ class TutorHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
-        response_body = json.dumps({"content": content, "stop_reason": final_msg.get("stop_reason")},
-                                   ensure_ascii=False)
+        response_body = json.dumps({
+            "content": content,
+            "stop_reason": final_msg.get("stop_reason"),
+            "usage": usage,
+        }, ensure_ascii=False)
         self.wfile.write(response_body.encode("utf-8"))
 
     def _handle_review(self):

@@ -152,24 +152,31 @@ function estimateTokens(text) {
   return Math.round(text.length / CHARS_PER_TOKEN);
 }
 
-function updateTokenBar(status) {
+function updateTokenBar(status, usage) {
   const countEl = document.getElementById('token-count');
   const statusEl = document.getElementById('token-status');
   if (!countEl || !statusEl) return;
 
-  let totalChars = SYSTEM_PROMPT_CHARS;
-  chatMessages.forEach(m => {
-    const content = m.content || '';
-    totalChars += content.length;
-  });
-
-  countEl.textContent = String(Math.round(totalChars / CHARS_PER_TOKEN));
+  if (usage && usage.input_tokens !== undefined) {
+    countEl.textContent = usage.input_tokens + ' ↑ / ' + usage.output_tokens + ' ↓';
+  } else {
+    let totalChars = SYSTEM_PROMPT_CHARS;
+    chatMessages.forEach(m => {
+      const content = m.content || '';
+      totalChars += content.length;
+    });
+    countEl.textContent = '~' + String(Math.round(totalChars / CHARS_PER_TOKEN));
+  }
 
   if (status) {
     statusEl.textContent = status;
     clearTimeout(updateTokenBar._timeout);
-    updateTokenBar._timeout = setTimeout(() => { statusEl.textContent = ''; }, 2000);
   }
+}
+
+function clearTokenStatus() {
+  const statusEl = document.getElementById('token-status');
+  if (statusEl) statusEl.textContent = '';
 }
 
 // ── API key management ──────────────────────────────────────────────────────
@@ -647,7 +654,7 @@ function removeTypingIndicator() {
   if (el) el.remove();
 }
 
-function appendAssistantMessage(content) {
+function appendAssistantMessage(content, usage) {
   removeTypingIndicator();
   const msg = { role: 'assistant', content: content };
   chatMessages.push(msg);
@@ -655,7 +662,7 @@ function appendAssistantMessage(content) {
   el.appendChild(renderChatMessage(msg));
   saveChatHistory();
   scrollChatToBottom();
-  updateTokenBar('↓ получено');
+  updateTokenBar('↓ получено', usage);
 }
 
 function appendUserMessage(content) {
@@ -687,6 +694,7 @@ async function sendChatMessage() {
   }
 
   appendUserMessage(text);
+  updateTokenBar('↻ общение...');
   addTypingIndicator();
 
   const sendBtn = document.getElementById('chat-send-btn');
@@ -719,7 +727,7 @@ async function sendChatMessage() {
       .map(c => c.text)
       .join('\n');
 
-    appendAssistantMessage(textBlocks || '(пустой ответ)');
+    appendAssistantMessage(textBlocks || '(пустой ответ)', data.usage);
   } catch (e) {
     removeTypingIndicator();
     appendAssistantMessage('Извини, произошла ошибка: ' + e.message + '\n\nПроверь ключ API в настройках (⚙) и попробуй снова.');
