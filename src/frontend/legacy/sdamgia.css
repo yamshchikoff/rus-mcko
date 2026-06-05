@@ -160,6 +160,14 @@ header p { color: var(--muted); margin: 0; }
 }
 .timer-btn-finish:hover { background: #ffe0b2; }
 
+.timer-btn-start {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+    font-weight: bold;
+}
+.timer-btn-start:hover { background: var(--accent-hover, #1565c0); }
+
 .progress-toggle-btn {
     padding: 6px 16px;
     font-size: 15px;

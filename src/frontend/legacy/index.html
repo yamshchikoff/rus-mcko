@@ -52,9 +52,11 @@
       <td class="timer-label">Осталось&nbsp;</td>
       <td class="timer-value timer-remaining" id="t-remaining">45:00</td>
       <td>
-        <button class="timer-btn" id="t-pause" onclick="toggleTimer()">Пауза</button>
-        <button class="timer-btn" onclick="resetTimer()">Заново</button>
-        <button class="timer-btn timer-btn-finish" onclick="finishWork()">Завершить работу</button>
+        <button class="timer-btn timer-btn-start" id="t-start" onclick="startWork()">Начать работу</button>
+        <button class="timer-btn" id="t-pause" onclick="toggleTimer()" style="display:none">Пауза</button>
+        <button class="timer-btn" id="t-continue" onclick="toggleTimer()" style="display:none">Продолжить</button>
+        <button class="timer-btn" id="t-reset" onclick="resetTimer()">Заново</button>
+        <button class="timer-btn timer-btn-finish" id="t-finish" onclick="finishWork()">Завершить работу</button>
       </td>
     </tr>
   </table>
@@ -763,6 +765,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     chatMessages = loadChatHistory();
     renderChatHistory();
     populateSelector();
+
+    // Restore active variant and timer state on page reload
+    const savedTimer = loadTimerState();
+    if (savedTimer && savedTimer.v && variants.some(v => v.num === savedTimer.v)) {
+      // Check variant is not already completed
+      const prog = loadProgress();
+      if (!prog[savedTimer.v] || !prog[savedTimer.v].completed) {
+        const sel = document.getElementById('variant-select');
+        sel.value = savedTimer.v;
+        // showVariant will see the saved state and show Continue button
+        showVariant(savedTimer.v);
+      }
+    }
   } catch (e) {
     document.getElementById('content').innerHTML =
       `<div class="error">Ошибка загрузки вариантов: ${e.message}<br>
@@ -792,7 +807,25 @@ function showVariant(num) {
 
   if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
   currentVariant = num;
-  startTimer();
+
+  // Check for saved timer state for this variant
+  const saved = loadTimerState();
+  if (saved && saved.v === num) {
+    timerElapsed = saved.elapsed;
+    timerRunning = false;
+    timerStateLoaded = true;
+    document.getElementById('timer-bar').classList.add('active');
+    updateTimerDisplay();
+    showContinueButton();
+  } else {
+    timerElapsed = 0;
+    timerRunning = false;
+    timerStateLoaded = false;
+    clearTimerState();
+    document.getElementById('timer-bar').classList.add('active');
+    updateTimerDisplay();
+    showStartButton();
+  }
 
   chatMessages = loadChatHistory();
   renderChatHistory();
@@ -933,6 +966,9 @@ function doSwitch() {
       localStorage.removeItem(`vpr-ans-${currentVariant}-${issue}`);
     }
   }
+  clearTimerState();
+  timerElapsed = 0;
+  timerStateLoaded = false;
   showVariant(pendingVariant);
   pendingVariant = null;
 }
@@ -1014,6 +1050,7 @@ function doFinish() {
   isReviewInProgress = true;
   if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
   timerRunning = false;
+  clearTimerState();
   requestAIReview(currentVariant);
 }
 
@@ -1098,30 +1135,96 @@ function exportProgress() {
   URL.revokeObjectURL(a.href);
 }
 
+
 // Timer
 const TOTAL_SEC = 45 * 60;
+const TIMER_STATE_KEY = 'vpr-timer-state';
+const TIMER_SAVE_INTERVAL = 5; // save state every N ticks
+
 let timerElapsed = 0;
 let timerInterval = null;
 let timerRunning = false;
+let timerStateLoaded = false; // true when state was restored from localStorage
 
-function startTimer() {
+// ── Timer state persistence ───────────────────────────────────────────────
+
+function saveTimerState() {
+  if (!currentVariant) return;
+  const state = { v: currentVariant, elapsed: timerElapsed, running: timerRunning };
+  try { localStorage.setItem(TIMER_STATE_KEY, JSON.stringify(state)); } catch (_) {}
+}
+
+function loadTimerState() {
+  try {
+    const raw = localStorage.getItem(TIMER_STATE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch (_) { return null; }
+}
+
+function clearTimerState() {
+  try { localStorage.removeItem(TIMER_STATE_KEY); } catch (_) {}
+}
+
+// ── Timer display helpers ─────────────────────────────────────────────────
+
+function hideAllTimerButtons() {
+  ['t-start', 't-pause', 't-continue'].forEach(id => {
+    const btn = document.getElementById(id);
+    if (btn) btn.style.display = 'none';
+  });
+}
+
+function showStartButton() {
+  hideAllTimerButtons();
+  document.getElementById('t-start').style.display = '';
+}
+
+function showPauseButton() {
+  hideAllTimerButtons();
+  document.getElementById('t-pause').style.display = '';
+}
+
+function showContinueButton() {
+  hideAllTimerButtons();
+  document.getElementById('t-continue').style.display = '';
+}
+
+// ── Timer logic ───────────────────────────────────────────────────────────
+
+function startWork() {
   if (timerInterval) return;
-  timerElapsed = 0;
+  startTimer(timerStateLoaded ? timerElapsed : 0);
+  timerStateLoaded = false;
+  saveTimerState();
+}
+
+function startTimer(startFrom) {
+  if (timerInterval) return;
+  timerElapsed = (startFrom !== undefined) ? startFrom : 0;
   timerRunning = true;
+  showPauseButton();
   document.getElementById('timer-bar').classList.add('active');
-  document.getElementById('t-pause').textContent = 'Пауза';
   updateTimerDisplay();
   timerInterval = setInterval(tick, 1000);
+  saveTimerState();
 }
 
 function tick() {
   timerElapsed++;
   updateTimerDisplay();
+
+  // Save state periodically to survive page reload
+  if (timerElapsed % TIMER_SAVE_INTERVAL === 0) {
+    saveTimerState();
+  }
+
   if (timerElapsed >= TOTAL_SEC) {
     if (isReviewInProgress) return;
     clearInterval(timerInterval);
     timerInterval = null;
     timerRunning = false;
+    clearTimerState();
     isReviewInProgress = true;
     requestAIReview(currentVariant);
     alert('Время вышло. Работа завершена.');
@@ -1134,11 +1237,13 @@ function toggleTimer() {
     clearInterval(timerInterval);
     timerInterval = null;
     timerRunning = false;
-    document.getElementById('t-pause').textContent = 'Продолжить';
+    showContinueButton();
+    saveTimerState();
   } else {
     timerRunning = true;
-    document.getElementById('t-pause').textContent = 'Пауза';
+    showPauseButton();
     timerInterval = setInterval(tick, 1000);
+    saveTimerState();
   }
 }
 
@@ -1157,11 +1262,12 @@ function doReset() {
   }
   if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
   timerElapsed = 0;
-  timerRunning = true;
+  timerRunning = false;
+  timerStateLoaded = false;
+  clearTimerState();
+  showStartButton();
   document.getElementById('timer-bar').classList.add('active');
-  document.getElementById('t-pause').textContent = 'Пауза';
   updateTimerDisplay();
-  timerInterval = setInterval(tick, 1000);
 }
 
 function hideResetConfirm() {
@@ -1181,11 +1287,20 @@ function updateTimerDisplay() {
 }
 
 function fmtTime(totalSec) {
-  if (totalSec < 0) return '0:00';
+  if (totalSec < 0) totalSec = 0;
   var m = Math.floor(totalSec / 60);
   var s = totalSec % 60;
   return m + ':' + (s < 10 ? '0' : '') + s;
 }
+
+// ── Survive page reload / accidental close ────────────────────────────────
+
+window.addEventListener('beforeunload', () => {
+  if (currentVariant && timerRunning) {
+    saveTimerState();
+  }
+});
+
 </script>
 
 </body>
