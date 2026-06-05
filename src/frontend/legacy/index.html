@@ -15,8 +15,8 @@
 <div class="chat-panel" id="chat-panel">
   <div class="chat-header">
     <h2>ИИ-репетитор</h2>
-    <button class="toggle-btn" onclick="exportChatHistory()" style="margin:0;font-size:11px" title="Скачать историю чата">💾</button>
-    <button class="toggle-btn" onclick="importChatHistory()" style="margin:0;font-size:11px" title="Загрузить историю чата">📂</button>
+    <button class="toggle-btn" onclick="exportChatHistory()" style="margin:0" title="Скачать историю чата">Скачать</button>
+    <button class="toggle-btn" onclick="importChatHistory()" style="margin:0" title="Загрузить историю чата">Загрузить</button>
     <button class="chat-settings-btn" onclick="showApiKeyModal()" title="Настройки API">⚙</button>
   </div>
   <input type="file" id="chat-file-input" accept=".json" style="display:none" onchange="handleChatFile(event)">
@@ -267,7 +267,7 @@ function handleChatFile(event) {
       }
       for (let i = 0; i < data.messages.length; i++) {
         const m = data.messages[i];
-        if (!m || typeof m !== 'object' || !m.role || !m.content) {
+        if (!m || typeof m !== 'object' || typeof m.role !== 'string' || typeof m.content !== 'string') {
           alert('Сообщение ' + (i + 1) + ' имеет неверный формат.');
           return;
         }
@@ -1305,7 +1305,7 @@ function handleProgressFile(event) {
   reader.onload = function(e) {
     try {
       const data = JSON.parse(e.target.result);
-      if (!data || typeof data !== 'object' || !data.progress) {
+      if (!data || typeof data !== 'object' || typeof data.progress !== 'object' || Array.isArray(data.progress)) {
         alert('Неверный формат файла: отсутствуют данные прогресса.');
         return;
       }
@@ -1314,6 +1314,7 @@ function handleProgressFile(event) {
       // Restore answers
       if (data.answers && typeof data.answers === 'object') {
         for (const [key, val] of Object.entries(data.answers)) {
+          if (!/^\d+-\d+$/.test(key)) continue;
           try {
             localStorage.setItem('vpr-ans-' + key, String(val));
           } catch { /* quota */ }
