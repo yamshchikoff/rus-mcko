@@ -10,8 +10,11 @@ from __future__ import annotations
 import json
 import logging
 import sys
+import threading
+import uuid
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from socketserver import ThreadingMixIn
 from urllib.parse import urlparse
 
 # Allow running as `python3 src/tutor/server.py` from project root
@@ -35,6 +38,21 @@ STATIC_ROOT = Path(__file__).resolve().parent.parent / "frontend" / "legacy"
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 DATA_ROOT = PROJECT_ROOT / "data"
 DEFAULT_TEXTBOOK_PATH = PROJECT_ROOT / "data" / "textbook" / "textbook.json"
+
+# ── Review status tracking (thread-safe) ────────────────────────────────────
+
+_review_statuses: dict[str, dict] = {}
+_review_lock = threading.Lock()
+
+
+def _set_review_status(request_id: str, status: dict) -> None:
+    with _review_lock:
+        _review_statuses[request_id] = status
+
+
+def _get_review_status(request_id: str) -> dict | None:
+    with _review_lock:
+        return _review_statuses.get(request_id)
 
 # ── Textbook loading ────────────────────────────────────────────────────────
 
@@ -148,8 +166,13 @@ def run_tool_use_loop(
 # ── HTTP handler ────────────────────────────────────────────────────────────
 
 
+class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
+    """HTTP server that handles each request in its own thread."""
+    daemon_threads = True
+
+
 class TutorHandler(BaseHTTPRequestHandler):
-    """Serves static files, /api/toc, and /api/chat (SSE)."""
+    """Serves static files, /api/toc, /api/chat, and /api/review."""
 
     textbook_path = str(DEFAULT_TEXTBOOK_PATH)
     _textbook: dict | None = None  # class-level cache
@@ -169,6 +192,8 @@ class TutorHandler(BaseHTTPRequestHandler):
 
         if path == "/api/toc":
             self._serve_toc()
+        elif path.startswith("/api/review/status/"):
+            self._serve_review_status(path)
         else:
             self._serve_static(path)
 
@@ -186,6 +211,21 @@ class TutorHandler(BaseHTTPRequestHandler):
     def _serve_toc(self):
         tb = self.get_textbook()
         body = json.dumps(tb["toc"], ensure_ascii=False).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _serve_review_status(self, path: str):
+        """GET /api/review/status/{request_id} — poll for review progress."""
+        request_id = path.rsplit("/", 1)[-1]
+        status = _get_review_status(request_id)
+        if status is None:
+            self.send_error(404, "Unknown request_id")
+            return
+        body = json.dumps(status, ensure_ascii=False).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
@@ -235,6 +275,7 @@ class TutorHandler(BaseHTTPRequestHandler):
         self.wfile.write(response_body.encode("utf-8"))
 
     def _handle_review(self):
+        """POST /api/review — accept review request, process in background."""
         length = int(self.headers.get("Content-Length", 0))
         raw = self.rfile.read(length)
         payload = json.loads(raw)
@@ -253,29 +294,51 @@ class TutorHandler(BaseHTTPRequestHandler):
             self.send_error(400, "tasks array is required")
             return
 
+        request_id = uuid.uuid4().hex[:12]
         tb = self.get_textbook()
 
-        try:
-            result = execute_review(
-                api_key, tasks, variant_num, tb,
-                progress_context=progress_context,
-            )
-        except requests.HTTPError as e:
-            self.send_error(
-                e.response.status_code if e.response else 502,
-                f"Upstream error: {e}",
-            )
-            return
-        except requests.RequestException as e:
-            self.send_error(502, f"Upstream error: {e}")
-            return
-
-        self.send_response(200)
+        body = json.dumps(
+            {"request_id": request_id, "status": "accepted"},
+            ensure_ascii=False,
+        ).encode("utf-8")
+        self.send_response(202)
         self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
-        response_body = json.dumps(result, ensure_ascii=False)
-        self.wfile.write(response_body.encode("utf-8"))
+        self.wfile.write(body)
+
+        def run_review():
+            _set_review_status(request_id, {"step": "starting", "message": "Начинаю проверку..."})
+            try:
+                result = execute_review(
+                    api_key, tasks, variant_num, tb,
+                    progress_context=progress_context,
+                    on_status=lambda s: _set_review_status(request_id, s),
+                )
+                _set_review_status(request_id, {
+                    "step": "done",
+                    "reviews": result.get("reviews", []),
+                    "parse_error": result.get("parse_error", False),
+                })
+            except requests.HTTPError as e:
+                status_code = e.response.status_code if e.response else 502
+                _set_review_status(request_id, {
+                    "step": "error",
+                    "message": f"Ошибка API ({status_code}): {e}",
+                })
+            except requests.RequestException as e:
+                _set_review_status(request_id, {
+                    "step": "error",
+                    "message": f"Сетевая ошибка: {e}",
+                })
+            except Exception as e:
+                _set_review_status(request_id, {
+                    "step": "error",
+                    "message": f"Ошибка: {e}",
+                })
+
+        threading.Thread(target=run_review, daemon=True).start()
 
     def do_OPTIONS(self):
         self.send_response(204)
@@ -346,7 +409,7 @@ def main():
     logging.basicConfig(level=logging.INFO)
     TutorHandler.textbook_path = args.textbook
 
-    server = HTTPServer(("0.0.0.0", args.port), TutorHandler)
+    server = ThreadingHTTPServer(("0.0.0.0", args.port), TutorHandler)
     logger.info("Tutor server listening on http://0.0.0.0:%d", args.port)
     try:
         server.serve_forever()

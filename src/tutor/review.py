@@ -178,11 +178,23 @@ def execute_review(
     textbook: dict,
     progress_context: str = "",
     max_iterations: int = MAX_TOOL_ITERATIONS,
+    on_status: callable = None,
 ) -> dict:
     """Send tasks to DeepSeek, handling tool-use callbacks, return parsed review.
 
+    Args:
+        on_status: Optional callback receiving ``{"step": "...", ...}`` dicts.
+                   Steps: ``submitted``, ``processing``, ``tool``, ``parsing``,
+                   ``done``, ``error``.
+
     Returns a dict with ``reviews`` array and optional ``parse_error`` flag.
     """
+    def _emit(step, **kwargs):
+        if on_status:
+            payload = {"step": step}
+            payload.update(kwargs)
+            on_status(payload)
+
     url = DEEPSEEK_URL
     headers = {
         "x-api-key": api_key,
@@ -197,8 +209,11 @@ def execute_review(
         system_prompt += f"\n\n## Прогресс ученика\n{progress_context}"
 
     messages = build_review_messages(tasks, variant_num)
+    _emit("submitted", task_count=len(tasks))
 
-    for _ in range(max_iterations):
+    for iteration in range(max_iterations):
+        _emit("processing", iteration=iteration + 1)
+
         compacted = compact_history(messages)
 
         body = {
@@ -210,35 +225,50 @@ def execute_review(
             "max_tokens": MAX_TOKENS,
         }
 
-        resp = requests.post(url, headers=headers, json=body, timeout=60)
-        resp.raise_for_status()
+        try:
+            resp = requests.post(url, headers=headers, json=body, timeout=60)
+            resp.raise_for_status()
+        except Exception as e:
+            _emit("error", message=str(e))
+            raise
+
         msg = resp.json()
 
         if msg.get("stop_reason") != "tool_use":
-            # Extract text content
+            _emit("parsing")
             text_blocks = []
             for c in msg.get("content", []):
                 if c.get("type") == "text":
                     text_blocks.append(c.get("text", ""))
-            text = "\n".join(text_blocks)
-            return parse_review_response(text)
+            result = parse_review_response("\n".join(text_blocks))
+            _emit("done")
+            return result
 
         # Extract tool_use blocks and execute
         tool_calls = [c for c in msg.get("content", []) if c.get("type") == "tool_use"]
         if not tool_calls:
+            _emit("parsing")
             text_blocks = []
             for c in msg.get("content", []):
                 if c.get("type") == "text":
                     text_blocks.append(c.get("text", ""))
-            return parse_review_response("\n".join(text_blocks))
+            result = parse_review_response("\n".join(text_blocks))
+            _emit("done")
+            return result
+
+        for tc in tool_calls:
+            _emit("tool", name=tc.get("name", "?"), input=tc.get("input", {}))
 
         tool_results = execute_tools(tool_calls, textbook)
         messages.append({"role": "assistant", "content": msg.get("content", [])})
         messages.append({"role": "user", "content": tool_results})
 
     # Ran out of iterations — try to parse whatever we got
+    _emit("parsing")
     text_blocks = []
     for c in msg.get("content", []):
         if c.get("type") == "text":
             text_blocks.append(c.get("text", ""))
-    return parse_review_response("\n".join(text_blocks))
+    result = parse_review_response("\n".join(text_blocks))
+    _emit("done")
+    return result

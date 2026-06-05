@@ -228,10 +228,8 @@ async function requestAIReview(vNum) {
   showReviewLoading();
 
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 360000); // 6 min timeout
-
-    const resp = await fetch('/api/review', {
+    // Phase 1: submit review request, get request_id
+    const submitResp = await fetch('/api/review', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -240,47 +238,71 @@ async function requestAIReview(vNum) {
         progressContext: buildTutorContext(),
         tasks: tasks,
       }),
-      signal: controller.signal,
     });
-    clearTimeout(timeout);
 
-    if (!resp.ok) {
-      const errText = await resp.text();
-      throw new Error(errText || `HTTP ${resp.status}`);
+    if (!submitResp.ok) {
+      const errText = await submitResp.text();
+      throw new Error(errText || `HTTP ${submitResp.status}`);
     }
 
-    const data = await resp.json();
+    const { request_id } = await submitResp.json();
+    if (!request_id) throw new Error('No request_id in response');
 
-    if (data.parse_error) {
-      // Show raw text as a single review under task 1
-      const rawReview = [{
-        issue: 0,
-        score: 0,
-        max_score: 0,
-        strengths: '',
-        weaknesses: '',
-        recommendation: 'Модель не смогла вернуть структурированную проверку. Вот её ответ:\n\n' + (data.raw_text || ''),
-        textbook_refs: [],
-      }];
-      saveReviews(vNum, rawReview);
-    } else {
-      saveReviews(vNum, data.reviews || []);
-      // Update progress with AI scores
-      const aiScores = {};
-      (data.reviews || []).forEach(r => {
-        if (r.issue >= 1 && r.issue <= 7) {
-          aiScores[r.issue] = r.score;
+    // Phase 2: poll for status
+    const pollInterval = 1500;
+    const maxPolls = 240; // 6 minutes max
+    let polls = 0;
+
+    while (polls < maxPolls) {
+      await new Promise(r => setTimeout(r, pollInterval));
+      polls++;
+
+      const statusResp = await fetch(`/api/review/status/${request_id}`);
+      if (!statusResp.ok) {
+        if (statusResp.status === 404) continue; // not ready yet
+        throw new Error(`Status endpoint error: ${statusResp.status}`);
+      }
+
+      const status = await statusResp.json();
+      updateReviewLoading(status);
+
+      if (status.step === 'done') {
+        const data = status; // result is inlined in the status dict
+        if (data.parse_error) {
+          const rawReview = [{
+            issue: 0,
+            score: 0,
+            max_score: 0,
+            strengths: '',
+            weaknesses: '',
+            recommendation: 'Модель не смогла вернуть структурированную проверку. Вот её ответ:\n\n' + (data.raw_text || ''),
+            textbook_refs: [],
+          }];
+          saveReviews(vNum, rawReview);
+        } else {
+          saveReviews(vNum, data.reviews || []);
+          const aiScores = {};
+          (data.reviews || []).forEach(r => {
+            if (r.issue >= 1 && r.issue <= 7) {
+              aiScores[r.issue] = r.score;
+            }
+          });
+          if (Object.keys(aiScores).length > 0) {
+            markVariantCompleted(vNum, aiScores);
+            renderProgressTable();
+          }
         }
-      });
-      if (Object.keys(aiScores).length > 0) {
-        markVariantCompleted(vNum, aiScores);
-        renderProgressTable();
+        renderReviewBlocks(vNum);
+        await notifyModelOfReview(vNum);
+        return;
+      }
+
+      if (status.step === 'error') {
+        throw new Error(status.message || 'Неизвестная ошибка проверки');
       }
     }
 
-    renderReviewBlocks(vNum);
-    // Notify the chat model about completed review
-    await notifyModelOfReview(vNum);
+    throw new Error('Проверка заняла слишком много времени. Попробуй ещё раз.');
   } catch (e) {
     if (e.name === 'AbortError') {
       showReviewError('Проверка заняла слишком много времени. Попробуй ещё раз.');
@@ -291,6 +313,42 @@ async function requestAIReview(vNum) {
     hideReviewLoading();
     isReviewInProgress = false;
   }
+}
+
+// ── Review status display ──────────────────────────────────────────────────
+
+const _statusMessages = {
+  starting: 'Начинаю проверку...',
+  submitted: 'Отправил 7 заданий на проверку',
+  processing: 'Модель анализирует ответы...',
+  tool: 'Обращаюсь к учебнику...',
+  parsing: 'Обрабатываю результаты...',
+};
+
+function updateReviewLoading(status) {
+  const el = document.getElementById('review-loading-text');
+  if (!el) return;
+
+  const step = status.step;
+  let text = _statusMessages[step] || 'Проверяю...';
+
+  if (step === 'processing' && status.iteration) {
+    text = `Модель анализирует ответы (запрос ${status.iteration})...`;
+  } else if (step === 'tool') {
+    const name = status.name;
+    const inp = status.input || {};
+    if (name === 'get_page') {
+      text = `Читаю учебник: часть ${inp.part || '?'}, стр. ${inp.page || '?'}...`;
+    } else if (name === 'show_toc') {
+      text = 'Просматриваю оглавление учебника...';
+    } else {
+      text = `Обращаюсь к учебнику (${name || '?'})...`;
+    }
+  } else if (step === 'submitted' && status.task_count) {
+    text = `Отправил ${status.task_count} заданий на проверку`;
+  }
+
+  el.textContent = text;
 }
 
 async function notifyModelOfReview(vNum) {
@@ -357,7 +415,7 @@ function showReviewLoading() {
     overlay.id = 'review-loading';
     overlay.className = 'review-loading-overlay';
     overlay.innerHTML = `
-      <div class="review-loading-text">ИИ-репетитор проверяет твои ответы...</div>
+      <div class="review-loading-text" id="review-loading-text">ИИ-репетитор проверяет твои ответы...</div>
       <div class="review-loading-spinner"></div>
     `;
     const panel = document.getElementById('work-panel');

@@ -414,9 +414,23 @@ class TestReviewEndpoint:
                 method="POST",
             )
             with urllib.request.urlopen(req) as resp:
-                assert resp.status == 200
+                assert resp.status == 202
                 data = json.loads(resp.read().decode())
-                assert "reviews" in data
+                assert "request_id" in data
+                request_id = data["request_id"]
+
+            # Poll until done (mock returns immediately, so thread finishes fast)
+            import time
+            for _ in range(20):
+                time.sleep(0.1)
+                status_req = urllib.request.Request(f"{server_url}/api/review/status/{request_id}")
+                with urllib.request.urlopen(status_req) as sresp:
+                    sdata = json.loads(sresp.read().decode())
+                if sdata.get("step") == "done":
+                    assert "reviews" in sdata
+                    break
+            else:
+                raise AssertionError("Review did not complete within polling window")
 
 
 # ── Pluralization (Russian) ───────────────────────────────────────────────────
