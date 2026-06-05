@@ -303,6 +303,7 @@ async function requestAIReview(vNum) {
       }, 420000); // 7 minutes
 
       function connect() {
+        let settled = false;
         const es = new EventSource(`/api/review/stream/${request_id}`);
 
         es.onmessage = (event) => {
@@ -319,6 +320,7 @@ async function requestAIReview(vNum) {
 
           if (status.step === 'done') {
             clearTimeout(timeout);
+            settled = true;
             es.close();
             const data = status;
             if (status.usage) updateTokenBar('✓ проверено', status.usage);
@@ -352,12 +354,14 @@ async function requestAIReview(vNum) {
 
           if (status.step === 'error') {
             clearTimeout(timeout);
+            settled = true;
             es.close();
             reject(new Error(status.message || 'Неизвестная ошибка проверки'));
           }
         };
 
         es.onerror = () => {
+          if (settled) return;
           es.close();
           retries++;
           if (retries <= 3) {
