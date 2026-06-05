@@ -32,12 +32,12 @@ docker compose up -d
 
 ## Деплой на Яндекс.Облако
 
-На ВМ создаётся отдельный `compose.yml` на уровень выше репозитория — с Traefik и HTTPS.
+Размещается в `/srv/rus-mcko-deploy/`, запускается от root.
 
-Структура на ВМ:
+Структура:
 
 ```
-~/rus-mcko/
+/srv/rus-mcko-deploy/
   compose.yml            # деплойный композ
   traefik/
     traefik.yml          # конфиг Traefik
@@ -45,20 +45,20 @@ docker compose up -d
   app/                   # git clone репозитория
 ```
 
+Порядок развёртывания:
+
 1. ВМ с Ubuntu 24.04, статический IP, домен (A-запись → IP).
-2. Установи Docker:
+2. Установи Docker (все команды от root):
    ```bash
-   sudo apt update && sudo apt install -y docker.io
-   sudo usermod -aG docker $USER
-   # выйди и зайди заново
+   apt update && apt install -y docker.io
    ```
-3. Создай деплойную структуру:
+3. Создай структуру и склонируй репо:
    ```bash
-   mkdir -p ~/rus-mcko/traefik/data
-   cd ~/rus-mcko
+   mkdir -p /srv/rus-mcko-deploy/traefik/data
+   cd /srv/rus-mcko-deploy
    git clone <repo-url> app
    ```
-4. Создай `compose.yml`:
+4. Создай `/srv/rus-mcko-deploy/compose.yml`:
    ```yaml
    services:
      traefik:
@@ -82,7 +82,7 @@ docker compose up -d
          - "traefik.http.routers.app.tls.certresolver=letsencrypt"
          - "traefik.http.services.app.loadbalancer.server.port=8080"
    ```
-5. Создай `traefik/traefik.yml` (замени `me@yamshchikov.ru` и домен):
+5. Создай `/srv/rus-mcko-deploy/traefik/traefik.yml`:
    ```yaml
    entryPoints:
      web:
@@ -110,7 +110,7 @@ docker compose up -d
    ```
 6. Запусти:
    ```bash
-   cd ~/rus-mcko
+   cd /srv/rus-mcko-deploy
    docker compose up -d
    ```
 7. Открой порты 80 и 443 в группе безопасности Яндекс.Облака.
