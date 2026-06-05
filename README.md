@@ -25,61 +25,33 @@ python3 src/tutor/server.py --port 8080
 ## Docker
 
 ```bash
-# Сборка
-docker build -t rus-mcko .
+# Сборка и запуск (HTTP + HTTPS)
+docker compose up -d
 
-# Запуск — контейнер слушает 8080, снаружи доступен на порту 80
+# или без HTTPS — только HTTP на порту 80
+docker build -t rus-mcko .
 docker run -d --restart always -p 80:8080 rus-mcko
 ```
 
-Параметр `-p 80:8080` означает «пробросить хост-порт 80 на контейнерный порт 8080». Сервис открывается по `http://<ip>` без указания порта.
+При запуске через `docker compose` Caddy автоматически получает сертификат Let's Encrypt для домена, указанного в `Caddyfile`. Замени `rusrobotrain.ru` на свой домен.
 
 ### Деплой на Яндекс.Облако
 
-**Способ 1 — сборка прямо на ВМ (проще):**
-
-1. Подними ВМ с Ubuntu 24.04 и зайди по SSH.
-2. Установи Docker на ВМ:
+1. Подними ВМ с Ubuntu 24.04, зарезервируй статический IP, привяжи домен (A-запись → IP).
+2. Установи Docker:
    ```bash
    sudo apt update && sudo apt install -y docker.io
    sudo usermod -aG docker $USER
    # выйди и зайди заново
    ```
-3. Склонируй репозиторий, собери и запусти:
+3. Склонируй репозиторий, пропиши свой домен в `Caddyfile` и запусти:
    ```bash
    git clone <repo-url> rus-mcko
    cd rus-mcko
-   docker build -t rus-mcko .
-   docker run -d --restart always -p 80:8080 rus-mcko
+   docker compose up -d
    ```
 
-**Способ 2 — через Yandex Container Registry:**
-
-1. Установи Docker на локальной машине и на ВМ.
-2. Создай реестр в Yandex Cloud: Container Registry → Create registry.
-3. Настрой аутентификацию и запушь образ:
-   ```bash
-   docker tag rus-mcko cr.yandex/<registry-id>/rus-mcko
-   docker push cr.yandex/<registry-id>/rus-mcko
-   ```
-4. На ВМ — скачай и запусти:
-   ```bash
-   docker run -d --restart always -p 80:8080 cr.yandex/<registry-id>/rus-mcko
-   ```
-
-**Способ 3 — перенос файлом:**
-
-```bash
-# на локальной машине
-docker save rus-mcko | gzip > rus-mcko.tar.gz
-scp rus-mcko.tar.gz user@vm:~/
-
-# на ВМ
-gunzip -c rus-mcko.tar.gz | docker load
-docker run -d --restart always -p 80:8080 rus-mcko
-```
-
-Сервис будет доступен на порту 80 (HTTP). Ученику нужно открыть страницу в браузере и ввести API-ключ DeepSeek.
+Сервис будет доступен по `https://<домен>`. Caddy сам получит и будет обновлять сертификат Let's Encrypt.
 
 ## Стек
 
