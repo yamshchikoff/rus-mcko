@@ -1195,6 +1195,20 @@ function showContinueButton() {
 
 function startWork() {
   if (timerInterval) return;
+  // Clear old review and progress for this variant — fresh start
+  if (currentVariant) {
+    localStorage.removeItem(`vpr-review-${currentVariant}`);
+    const prog = loadProgress();
+    if (prog[currentVariant]) {
+      delete prog[currentVariant];
+      saveProgress(prog);
+    }
+    // Hide old review blocks from the DOM
+    for (let issue = 1; issue <= 7; issue++) {
+      const el = document.getElementById(`review-${currentVariant}-${issue}`);
+      if (el) { el.style.display = 'none'; el.innerHTML = ''; }
+    }
+  }
   startTimer(timerStateLoaded ? timerElapsed : 0);
   timerStateLoaded = false;
   saveTimerState();
