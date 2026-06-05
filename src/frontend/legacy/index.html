@@ -296,8 +296,8 @@ async function requestAIReview(vNum) {
     if (!request_id) throw new Error('No request_id in response');
 
     // Phase 2: poll for status
-    const pollInterval = 1500;
-    const maxPolls = 240; // 6 minutes max
+    const pollInterval = 800;
+    const maxPolls = 450; // 6 minutes at 800ms
     let polls = 0;
 
     while (polls < maxPolls) {

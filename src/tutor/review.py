@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 
 import requests
 
@@ -264,6 +265,10 @@ def execute_review(
               iter_input=iteration_usage.get("input_tokens", 0),
               iter_output=iteration_usage.get("output_tokens", 0),
               usage=dict(total_usage))
+
+        # Brief pause so the polling client sees the "received" step
+        if msg.get("stop_reason") == "tool_use":
+            time.sleep(0.6)
 
         if msg.get("stop_reason") != "tool_use":
             _emit("parsing", usage=dict(total_usage))
