@@ -157,7 +157,7 @@ function updateTokenBar(status, usage) {
   const statusEl = document.getElementById('token-status');
   if (!countEl || !statusEl) return;
 
-  if (usage && usage.input_tokens !== undefined) {
+  if (usage && usage.input_tokens !== undefined && (usage.input_tokens > 0 || usage.output_tokens > 0)) {
     countEl.textContent = usage.input_tokens + ' ↑ / ' + usage.output_tokens + ' ↓';
   } else {
     let totalChars = SYSTEM_PROMPT_CHARS;
@@ -270,6 +270,7 @@ async function requestAIReview(vNum) {
   }));
 
   showReviewLoading();
+  updateTokenBar('↻ проверка...');
 
   try {
     // Phase 1: submit review request, get request_id
@@ -309,9 +310,11 @@ async function requestAIReview(vNum) {
 
       const status = await statusResp.json();
       updateReviewLoading(status);
+      if (status.usage) updateTokenBar('↻ проверка...', status.usage);
 
       if (status.step === 'done') {
         const data = status; // result is inlined in the status dict
+        if (status.usage) updateTokenBar('✓ проверено', status.usage);
         if (data.parse_error) {
           const rawReview = [{
             issue: 0,

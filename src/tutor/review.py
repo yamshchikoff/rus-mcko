@@ -227,10 +227,11 @@ def execute_review(
         system_prompt += f"\n\n## Прогресс ученика\n{progress_context}"
 
     messages = build_review_messages(tasks, variant_num)
-    _emit("submitted", task_count=len(tasks))
+    total_usage = {"input_tokens": 0, "output_tokens": 0}
+    _emit("submitted", task_count=len(tasks), usage=dict(total_usage))
 
     for iteration in range(max_iterations):
-        _emit("processing", iteration=iteration + 1)
+        _emit("processing", iteration=iteration + 1, usage=dict(total_usage))
 
         compacted = compact_history(messages)
 
@@ -247,46 +248,54 @@ def execute_review(
             resp = requests.post(url, headers=headers, json=body, timeout=60)
             resp.raise_for_status()
         except Exception as e:
-            _emit("error", message=str(e))
+            _emit("error", message=str(e), usage=dict(total_usage))
             raise
 
         msg = resp.json()
 
+        # Accumulate usage from this API call
+        usage = msg.get("usage", {})
+        total_usage["input_tokens"] += usage.get("input_tokens", 0)
+        total_usage["output_tokens"] += usage.get("output_tokens", 0)
+
         if msg.get("stop_reason") != "tool_use":
-            _emit("parsing")
+            _emit("parsing", usage=dict(total_usage))
             text_blocks = []
             for c in msg.get("content", []):
                 if c.get("type") == "text":
                     text_blocks.append(c.get("text", ""))
             result = parse_review_response("\n".join(text_blocks))
-            _emit("done")
+            result["usage"] = total_usage
+            _emit("done", usage=dict(total_usage))
             return result
 
         # Extract tool_use blocks and execute
         tool_calls = [c for c in msg.get("content", []) if c.get("type") == "tool_use"]
         if not tool_calls:
-            _emit("parsing")
+            _emit("parsing", usage=dict(total_usage))
             text_blocks = []
             for c in msg.get("content", []):
                 if c.get("type") == "text":
                     text_blocks.append(c.get("text", ""))
             result = parse_review_response("\n".join(text_blocks))
-            _emit("done")
+            result["usage"] = total_usage
+            _emit("done", usage=dict(total_usage))
             return result
 
         for tc in tool_calls:
-            _emit("tool", name=tc.get("name", "?"), input=tc.get("input", {}))
+            _emit("tool", name=tc.get("name", "?"), input=tc.get("input", {}), usage=dict(total_usage))
 
         tool_results = execute_tools(tool_calls, textbook)
         messages.append({"role": "assistant", "content": msg.get("content", [])})
         messages.append({"role": "user", "content": tool_results})
 
     # Ran out of iterations — try to parse whatever we got
-    _emit("parsing")
+    _emit("parsing", usage=dict(total_usage))
     text_blocks = []
     for c in msg.get("content", []):
         if c.get("type") == "text":
             text_blocks.append(c.get("text", ""))
     result = parse_review_response("\n".join(text_blocks))
-    _emit("done")
+    result["usage"] = total_usage
+    _emit("done", usage=dict(total_usage))
     return result

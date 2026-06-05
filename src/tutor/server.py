@@ -331,6 +331,7 @@ class TutorHandler(BaseHTTPRequestHandler):
                     "step": "done",
                     "reviews": result.get("reviews", []),
                     "parse_error": result.get("parse_error", False),
+                    "usage": result.get("usage", {}),
                 })
             except requests.HTTPError as e:
                 status_code = e.response.status_code if e.response else 502
