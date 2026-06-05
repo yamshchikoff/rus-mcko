@@ -25,7 +25,7 @@ python3 src/tutor/server.py --port 8080
 ## Docker
 
 ```bash
-# Сборка и запуск (HTTP + HTTPS)
+# Сборка и запуск (HTTP + HTTPS через Traefik)
 docker compose up -d
 
 # или без HTTPS — только HTTP на порту 80
@@ -33,7 +33,7 @@ docker build -t rus-mcko .
 docker run -d --restart always -p 80:8080 rus-mcko
 ```
 
-При запуске через `docker compose` Caddy автоматически получает сертификат Let's Encrypt для домена, указанного в `Caddyfile`. Замени `rusrobotrain.ru` на свой домен.
+При запуске через `docker compose` Traefik автоматически получает сертификат Let's Encrypt для домена из `compose.yml`. Замени `rusrobotrain.ru` на свой домен в секции `labels` сервиса `app`. Почта для Let's Encrypt — в `traefik/traefik.yml`.
 
 ### Деплой на Яндекс.Облако
 
@@ -44,14 +44,14 @@ docker run -d --restart always -p 80:8080 rus-mcko
    sudo usermod -aG docker $USER
    # выйди и зайди заново
    ```
-3. Склонируй репозиторий, пропиши свой домен в `Caddyfile` и запусти:
+3. Склонируй репозиторий и запусти:
    ```bash
-   git clone <repo-url> rus-mcko
-   cd rus-mcko
+   git clone <repo-url> app
+   cd app
    docker compose up -d
    ```
 
-Сервис будет доступен по `https://<домен>`. Caddy сам получит и будет обновлять сертификат Let's Encrypt.
+Сервис будет доступен по `https://<домен>`. Traefik сам получит и будет обновлять сертификат Let's Encrypt. Сертификаты хранятся в `traefik/data/acme.json`.
 
 ## Стек
 
