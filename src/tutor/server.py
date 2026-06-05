@@ -50,8 +50,8 @@ def _push_review_event(request_id: str, status: dict) -> None:
     """Push a status update to the SSE queue for *request_id*."""
     with _review_queues_lock:
         q = _review_queues.get(request_id)
-    if q:
-        q.put(status)
+        if q:
+            q.put(status)
 
 
 def _get_or_create_review_queue(request_id: str) -> queue.Queue:
@@ -242,6 +242,9 @@ class TutorHandler(BaseHTTPRequestHandler):
     def _serve_review_stream(self, path: str):
         """GET /api/review/stream/{request_id} — SSE stream of status transitions."""
         request_id = path.rsplit("/", 1)[-1]
+        if len(request_id) != 12 or not all(c in '0123456789abcdef' for c in request_id):
+            self.send_error(400, "Invalid request_id format")
+            return
         q = _get_or_create_review_queue(request_id)
 
         self.send_response(200)
@@ -258,19 +261,16 @@ class TutorHandler(BaseHTTPRequestHandler):
                 except queue.Empty:
                     break
 
-                if status is None:  # end-of-stream sentinel
-                    break
-
                 data = json.dumps(status, ensure_ascii=False)
                 self.wfile.write(f"data: {data}\n\n".encode("utf-8"))
                 self.wfile.flush()
 
                 if status.get("step") in ("done", "error"):
                     break
+            else:
+                _remove_review_queue(request_id)
         except (BrokenPipeError, ConnectionResetError):
-            pass
-        finally:
-            _remove_review_queue(request_id)
+            pass  # keep queue alive for reconnection
 
     def _handle_chat(self):
         length = int(self.headers.get("Content-Length", 0))
@@ -338,7 +338,7 @@ class TutorHandler(BaseHTTPRequestHandler):
 
         request_id = uuid.uuid4().hex[:12]
         tb = self.get_textbook()
-        review_q = _get_or_create_review_queue(request_id)
+        _get_or_create_review_queue(request_id)
 
         body = json.dumps(
             {"request_id": request_id, "status": "accepted"},
@@ -384,9 +384,6 @@ class TutorHandler(BaseHTTPRequestHandler):
                     "step": "error",
                     "message": f"Ошибка: {e}",
                 })
-            finally:
-                _push_review_event(request_id, None)  # signal end-of-stream
-
         threading.Thread(target=run_review, daemon=True).start()
 
     def do_OPTIONS(self):

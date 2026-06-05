@@ -295,70 +295,81 @@ async function requestAIReview(vNum) {
     const { request_id } = await submitResp.json();
     if (!request_id) throw new Error('No request_id in response');
 
-    // Phase 2: listen for SSE status events from server
+    // Phase 2: listen for SSE status events from server (with retry)
+    let retries = 0;
     await new Promise((resolve, reject) => {
-      const es = new EventSource(`/api/review/stream/${request_id}`);
       const timeout = setTimeout(() => {
-        es.close();
         reject(new Error('Проверка заняла слишком много времени. Попробуй ещё раз.'));
       }, 420000); // 7 minutes
 
-      es.onmessage = (event) => {
-        const status = JSON.parse(event.data);
-        appendReviewLog(status);
-        if (status.usage) {
-          const u = status.usage;
-          if ((!u.input_tokens && !u.output_tokens) && status.est_input) {
-            u._est_input = status.est_input;
-          }
-          updateTokenBar('↻ проверка...', u);
-        }
+      function connect() {
+        const es = new EventSource(`/api/review/stream/${request_id}`);
 
-        if (status.step === 'done') {
-          clearTimeout(timeout);
-          es.close();
-          const data = status;
-          if (status.usage) updateTokenBar('✓ проверено', status.usage);
-          if (data.parse_error) {
-            const rawReview = [{
-              issue: 0,
-              score: 0,
-              max_score: 0,
-              strengths: '',
-              weaknesses: '',
-              recommendation: 'Модель не смогла вернуть структурированную проверку. Вот её ответ:\n\n' + (data.raw_text || ''),
-              textbook_refs: [],
-            }];
-            saveReviews(vNum, rawReview);
-          } else {
-            saveReviews(vNum, data.reviews || []);
-            const aiScores = {};
-            (data.reviews || []).forEach(r => {
-              if (r.issue >= 1 && r.issue <= 7) {
-                aiScores[r.issue] = r.score;
-              }
-            });
-            if (Object.keys(aiScores).length > 0) {
-              markVariantCompleted(vNum, aiScores);
-              renderProgressTable();
+        es.onmessage = (event) => {
+          retries = 0; // reset on successful message
+          const status = JSON.parse(event.data);
+          appendReviewLog(status);
+          if (status.usage) {
+            const u = status.usage;
+            if ((!u.input_tokens && !u.output_tokens) && status.est_input) {
+              u._est_input = status.est_input;
             }
+            updateTokenBar('↻ проверка...', u);
           }
-          renderReviewBlocks(vNum);
-          notifyModelOfReview(vNum).then(resolve);
-        }
 
-        if (status.step === 'error') {
-          clearTimeout(timeout);
+          if (status.step === 'done') {
+            clearTimeout(timeout);
+            es.close();
+            const data = status;
+            if (status.usage) updateTokenBar('✓ проверено', status.usage);
+            if (data.parse_error) {
+              const rawReview = [{
+                issue: 0,
+                score: 0,
+                max_score: 0,
+                strengths: '',
+                weaknesses: '',
+                recommendation: 'Модель не смогла вернуть структурированную проверку. Вот её ответ:\n\n' + (data.raw_text || ''),
+                textbook_refs: [],
+              }];
+              saveReviews(vNum, rawReview);
+            } else {
+              saveReviews(vNum, data.reviews || []);
+              const aiScores = {};
+              (data.reviews || []).forEach(r => {
+                if (r.issue >= 1 && r.issue <= 7) {
+                  aiScores[r.issue] = r.score;
+                }
+              });
+              if (Object.keys(aiScores).length > 0) {
+                markVariantCompleted(vNum, aiScores);
+                renderProgressTable();
+              }
+            }
+            renderReviewBlocks(vNum);
+            notifyModelOfReview(vNum).then(resolve, reject);
+          }
+
+          if (status.step === 'error') {
+            clearTimeout(timeout);
+            es.close();
+            reject(new Error(status.message || 'Неизвестная ошибка проверки'));
+          }
+        };
+
+        es.onerror = () => {
           es.close();
-          reject(new Error(status.message || 'Неизвестная ошибка проверки'));
-        }
-      };
+          retries++;
+          if (retries <= 3) {
+            setTimeout(connect, Math.pow(2, retries - 1) * 1000); // 1s, 2s, 4s
+          } else {
+            clearTimeout(timeout);
+            reject(new Error('Потеряна связь с сервером. Попробуй ещё раз.'));
+          }
+        };
+      }
 
-      es.onerror = () => {
-        clearTimeout(timeout);
-        es.close();
-        reject(new Error('Потеряна связь с сервером. Попробуй ещё раз.'));
-      };
+      connect();
     });
   } catch (e) {
     if (e.name === 'AbortError') {
