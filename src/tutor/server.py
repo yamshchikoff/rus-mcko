@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import queue
 import sys
 import threading
 import uuid
@@ -39,20 +40,32 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 DATA_ROOT = PROJECT_ROOT / "data"
 DEFAULT_TEXTBOOK_PATH = PROJECT_ROOT / "data" / "textbook" / "textbook.json"
 
-# ── Review status tracking (thread-safe) ────────────────────────────────────
+# ── Review SSE queues (thread-safe) ──────────────────────────────────────
 
-_review_statuses: dict[str, dict] = {}
-_review_lock = threading.Lock()
-
-
-def _set_review_status(request_id: str, status: dict) -> None:
-    with _review_lock:
-        _review_statuses[request_id] = status
+_review_queues: dict[str, queue.Queue] = {}
+_review_queues_lock = threading.Lock()
 
 
-def _get_review_status(request_id: str) -> dict | None:
-    with _review_lock:
-        return _review_statuses.get(request_id)
+def _push_review_event(request_id: str, status: dict) -> None:
+    """Push a status update to the SSE queue for *request_id*."""
+    with _review_queues_lock:
+        q = _review_queues.get(request_id)
+    if q:
+        q.put(status)
+
+
+def _get_or_get_or_create_review_queue(request_id: str) -> queue.Queue:
+    with _review_queues_lock:
+        q = _review_queues.get(request_id)
+        if q is None:
+            q = queue.Queue()
+            _review_queues[request_id] = q
+        return q
+
+
+def _remove_review_queue(request_id: str) -> None:
+    with _review_queues_lock:
+        _review_queues.pop(request_id, None)
 
 # ── Textbook loading ────────────────────────────────────────────────────────
 
@@ -200,8 +213,8 @@ class TutorHandler(BaseHTTPRequestHandler):
 
         if path == "/api/toc":
             self._serve_toc()
-        elif path.startswith("/api/review/status/"):
-            self._serve_review_status(path)
+        elif path.startswith("/api/review/stream/"):
+            self._serve_review_stream(path)
         else:
             self._serve_static(path)
 
@@ -226,20 +239,38 @@ class TutorHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _serve_review_status(self, path: str):
-        """GET /api/review/status/{request_id} — poll for review progress."""
+    def _serve_review_stream(self, path: str):
+        """GET /api/review/stream/{request_id} — SSE stream of status transitions."""
         request_id = path.rsplit("/", 1)[-1]
-        status = _get_review_status(request_id)
-        if status is None:
-            self.send_error(404, "Unknown request_id")
-            return
-        body = json.dumps(status, ensure_ascii=False).encode("utf-8")
+        q = _get_or_create_review_queue(request_id)
+
         self.send_response(200)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "keep-alive")
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
-        self.wfile.write(body)
+
+        try:
+            while True:
+                try:
+                    status = q.get(timeout=300)  # 5 min timeout
+                except queue.Empty:
+                    break
+
+                if status is None:  # end-of-stream sentinel
+                    break
+
+                data = json.dumps(status, ensure_ascii=False)
+                self.wfile.write(f"data: {data}\n\n".encode("utf-8"))
+                self.wfile.flush()
+
+                if status.get("step") in ("done", "error"):
+                    break
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        finally:
+            _remove_review_queue(request_id)
 
     def _handle_chat(self):
         length = int(self.headers.get("Content-Length", 0))
@@ -307,6 +338,7 @@ class TutorHandler(BaseHTTPRequestHandler):
 
         request_id = uuid.uuid4().hex[:12]
         tb = self.get_textbook()
+        review_q = _get_or_create_review_queue(request_id)
 
         body = json.dumps(
             {"request_id": request_id, "status": "accepted"},
@@ -319,15 +351,18 @@ class TutorHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+        def on_status(s):
+            _push_review_event(request_id, s)
+
         def run_review():
-            _set_review_status(request_id, {"step": "starting", "message": "Начинаю проверку..."})
+            on_status({"step": "starting", "message": "Начинаю проверку..."})
             try:
                 result = execute_review(
                     api_key, tasks, variant_num, tb,
                     progress_context=progress_context,
-                    on_status=lambda s: _set_review_status(request_id, s),
+                    on_status=on_status,
                 )
-                _set_review_status(request_id, {
+                on_status({
                     "step": "done",
                     "reviews": result.get("reviews", []),
                     "parse_error": result.get("parse_error", False),
@@ -335,20 +370,23 @@ class TutorHandler(BaseHTTPRequestHandler):
                 })
             except requests.HTTPError as e:
                 status_code = e.response.status_code if e.response else 502
-                _set_review_status(request_id, {
+                on_status({
                     "step": "error",
                     "message": f"Ошибка API ({status_code}): {e}",
                 })
             except requests.RequestException as e:
-                _set_review_status(request_id, {
+                on_status({
                     "step": "error",
                     "message": f"Сетевая ошибка: {e}",
                 })
             except Exception as e:
-                _set_review_status(request_id, {
+                on_status({
                     "step": "error",
                     "message": f"Ошибка: {e}",
                 })
+            finally:
+                _push_review_event(request_id, None)  # signal end-of-stream
+                _remove_review_queue(request_id)
 
         threading.Thread(target=run_review, daemon=True).start()
 
