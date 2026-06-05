@@ -134,7 +134,7 @@ class TestBuildReviewMessages:
         tasks = [make_task(1, student_answer="")]
         msgs = build_review_messages(tasks, 1)
         content = msgs[0]["content"].lower()
-        assert "пусто" in content or "отсутствует" in content or "нет ответа" in content
+        assert "пропущено" in content
 
     def test_strips_html_tags(self):
         tasks = [make_task(1, content_html="<p><b>Спишите</b> текст, <i>раскрывая</i> скобки.</p>")]
