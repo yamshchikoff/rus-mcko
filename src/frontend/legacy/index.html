@@ -82,6 +82,11 @@
 </div><!-- .work-panel -->
 </div><!-- .main-container -->
 
+<div id="token-bar" class="token-bar">
+  <span class="token-bar-label">Контекст: ~<span id="token-count">0</span> токенов</span>
+  <span class="token-bar-status" id="token-status"></span>
+</div>
+
 <!-- Existing modals -->
 <div id="reset-modal" class="modal-overlay" style="display:none">
   <div class="modal-box">
@@ -136,6 +141,36 @@ const MAX_CHAT_MESSAGES = 100;
 let chatMessages = [];
 let isStreaming = false;
 let isReviewInProgress = false;
+
+// ── Token estimation ─────────────────────────────────────────────────────────
+
+const CHARS_PER_TOKEN = 3.5;
+const SYSTEM_PROMPT_CHARS = 5000; // approximate system prompt + tools size
+
+function estimateTokens(text) {
+  if (!text) return 0;
+  return Math.round(text.length / CHARS_PER_TOKEN);
+}
+
+function updateTokenBar(status) {
+  const countEl = document.getElementById('token-count');
+  const statusEl = document.getElementById('token-status');
+  if (!countEl || !statusEl) return;
+
+  let totalChars = SYSTEM_PROMPT_CHARS;
+  chatMessages.forEach(m => {
+    const content = m.content || '';
+    totalChars += content.length;
+  });
+
+  countEl.textContent = String(Math.round(totalChars / CHARS_PER_TOKEN));
+
+  if (status) {
+    statusEl.textContent = status;
+    clearTimeout(updateTokenBar._timeout);
+    updateTokenBar._timeout = setTimeout(() => { statusEl.textContent = ''; }, 2000);
+  }
+}
 
 // ── API key management ──────────────────────────────────────────────────────
 
@@ -620,6 +655,7 @@ function appendAssistantMessage(content) {
   el.appendChild(renderChatMessage(msg));
   saveChatHistory();
   scrollChatToBottom();
+  updateTokenBar('↓ получено');
 }
 
 function appendUserMessage(content) {
@@ -629,6 +665,7 @@ function appendUserMessage(content) {
   el.appendChild(renderChatMessage(msg));
   saveChatHistory();
   scrollChatToBottom();
+  updateTokenBar('↑ отправка...');
 }
 
 // ── Chat API call ───────────────────────────────────────────────────────────
@@ -866,6 +903,7 @@ function renderChatHistory() {
     });
   }
   scrollChatToBottom();
+  updateTokenBar();
 }
 
 function renderTask(t, vNum) {

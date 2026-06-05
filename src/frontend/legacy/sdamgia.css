@@ -43,7 +43,7 @@ body {
 .work-panel {
     height: 100vh;
     overflow-y: auto;
-    padding: 20px 30px;
+    padding: 20px 30px 28px 30px;
     position: relative;
 }
 
@@ -767,4 +767,34 @@ footer {
     text-align: center;
     color: var(--muted);
     font-size: 14px;
+}
+
+/* ── Token status bar ───────────────────────────────────────────────────── */
+
+.token-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 20px;
+    padding: 0 12px;
+    background: #f8f8f8;
+    border-top: 1px solid var(--border);
+    font-size: 11px;
+    line-height: 20px;
+    color: var(--muted);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    z-index: 500;
+    font-family: 'Courier New', monospace;
+}
+
+.token-bar-label {
+    white-space: nowrap;
+}
+
+.token-bar-status {
+    white-space: nowrap;
+    color: var(--accent);
 }
