@@ -857,11 +857,15 @@ function showVariant(num) {
   const saved = loadTimerState();
   if (saved && saved.v === num) {
     timerElapsed = saved.elapsed;
-    timerRunning = false;
     timerStateLoaded = true;
     document.getElementById('timer-bar').classList.add('active');
     updateTimerDisplay();
-    showContinueButton();
+    if (saved.running) {
+      startTimer(timerElapsed);
+    } else {
+      timerRunning = false;
+      showContinueButton();
+    }
   } else {
     timerElapsed = 0;
     timerRunning = false;
