@@ -1329,6 +1329,12 @@ function startWork() {
       const el = document.getElementById(`review-${currentVariant}-${issue}`);
       if (el) { el.style.display = 'none'; el.innerHTML = ''; }
     }
+    // Clear old answers — fresh start
+    for (let issue = 1; issue <= 7; issue++) {
+      localStorage.removeItem(`vpr-ans-${currentVariant}-${issue}`);
+      const ta = document.getElementById(`ta-${currentVariant}-${issue}`);
+      if (ta) ta.value = '';
+    }
   }
   startTimer(timerStateLoaded ? timerElapsed : 0);
   timerStateLoaded = false;
