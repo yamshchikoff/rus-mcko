@@ -368,6 +368,8 @@ const _statusMessages = {
   starting: 'Начинаю проверку...',
   submitted: 'Отправил 7 заданий на проверку',
   processing: 'Модель анализирует ответы...',
+  sending: 'Отправляю запрос к API...',
+  received: 'Получен ответ от модели',
   tool: 'Обращаюсь к учебнику...',
   parsing: 'Обрабатываю результаты...',
 };
@@ -381,6 +383,10 @@ function updateReviewLoading(status) {
 
   if (step === 'processing' && status.iteration) {
     text = `Модель анализирует ответы (запрос ${status.iteration})...`;
+  } else if (step === 'sending' && status.iteration) {
+    text = `Отправляю запрос ${status.iteration} к API...`;
+  } else if (step === 'received' && status.iteration) {
+    text = `Получен ответ (запрос ${status.iteration}): +${status.iter_input || 0}↑/${status.iter_output || 0}↓ токенов`;
   } else if (step === 'tool') {
     const name = status.name;
     const inp = status.input || {};

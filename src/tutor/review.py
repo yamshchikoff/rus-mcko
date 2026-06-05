@@ -244,6 +244,7 @@ def execute_review(
             "max_tokens": MAX_TOKENS,
         }
 
+        _emit("sending", iteration=iteration + 1, usage=dict(total_usage))
         try:
             resp = requests.post(url, headers=headers, json=body, timeout=60)
             resp.raise_for_status()
@@ -254,9 +255,13 @@ def execute_review(
         msg = resp.json()
 
         # Accumulate usage from this API call
-        usage = msg.get("usage", {})
-        total_usage["input_tokens"] += usage.get("input_tokens", 0)
-        total_usage["output_tokens"] += usage.get("output_tokens", 0)
+        iteration_usage = msg.get("usage", {})
+        total_usage["input_tokens"] += iteration_usage.get("input_tokens", 0)
+        total_usage["output_tokens"] += iteration_usage.get("output_tokens", 0)
+        _emit("received", iteration=iteration + 1,
+              iter_input=iteration_usage.get("input_tokens", 0),
+              iter_output=iteration_usage.get("output_tokens", 0),
+              usage=dict(total_usage))
 
         if msg.get("stop_reason") != "tool_use":
             _emit("parsing", usage=dict(total_usage))
