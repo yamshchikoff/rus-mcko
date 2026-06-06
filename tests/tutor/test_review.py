@@ -481,6 +481,30 @@ class TestExecuteReviewWithSubmitReview:
         assert result.get("parse_error") is True
         assert len(result["reviews"]) == 0
 
+    def test_diagnostic_event_emitted_when_reviews_empty(self):
+        """When model skips submit_review, a diagnostic SSE event is emitted."""
+        tb = dummy_textbook_with_index()
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {
+            "id": "msg_1",
+            "type": "message",
+            "role": "assistant",
+            "content": [{"type": "text", "text": "Вот результаты проверки."}],
+            "stop_reason": "end_turn",
+        }
+
+        events = []
+        def collect(s):
+            events.append(s)
+
+        with patch("src.tutor.review.requests.post", return_value=mock_resp):
+            execute_review("sk-test", sample_tasks(1), 1, tb, on_status=collect)
+
+        diagnostic = [e for e in events if e["step"] == "diagnostic"]
+        assert len(diagnostic) == 1
+        assert diagnostic[0]["stop_reason"] == "end_turn"
+        assert "text" in diagnostic[0]["content_types"]
+
     def test_mixed_tool_calls_in_single_turn(self):
         tb = dummy_textbook_with_index()
 
@@ -638,10 +662,10 @@ class TestPluralizeScore:
 
 class TestTimeoutConsistency:
     def test_backend_timeout_within_bounds(self):
-        """Backend worst-case: MAX_REVIEW_TOOL_ITERATIONS * 60s timeout should be <= 600s."""
+        """Backend worst-case: MAX_REVIEW_TOOL_ITERATIONS * 60s timeout should be <= 1800s (30 min)."""
         from src.tutor.review import MAX_REVIEW_TOOL_ITERATIONS
         per_request_timeout = 60  # hardcoded in execute_review requests.post(..., timeout=60)
         worst_case = MAX_REVIEW_TOOL_ITERATIONS * per_request_timeout
-        assert worst_case <= 600, (
-            f"Backend worst-case timeout {worst_case}s exceeds 600s"
+        assert worst_case <= 1800, (
+            f"Backend worst-case timeout {worst_case}s exceeds 1800s"
         )

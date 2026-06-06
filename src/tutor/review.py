@@ -16,7 +16,7 @@ import requests
 
 from src.tutor.compaction import compact_history
 from src.tutor.common import (
-    DEEPSEEK_URL, ANTHROPIC_VERSION, MODEL, MAX_TOKENS,
+    DEEPSEEK_URL, ANTHROPIC_VERSION, MODEL, MAX_REVIEW_TOKENS,
     MAX_TOOL_ITERATIONS, MAX_REVIEW_TOOL_ITERATIONS,
     make_tools, execute_tools,
 )
@@ -199,6 +199,23 @@ def execute_review(
             payload.update(kwargs)
             on_status(payload)
 
+    def _make_result(last_msg):
+        rv = {
+            "reviews": list(reviews.values()),
+            "parse_error": len(reviews) == 0,
+            "usage": total_usage,
+        }
+        if rv["parse_error"]:
+            text_blocks = [c.get("text", "") for c in last_msg.get("content", []) if c.get("type") == "text"]
+            sample = "\n".join(text_blocks)[:800]
+            _emit("diagnostic",
+                  stop_reason=last_msg.get("stop_reason", "unknown"),
+                  content_types=[c.get("type") for c in last_msg.get("content", [])],
+                  text_sample=sample,
+                  iteration=iteration + 1,
+                  usage=dict(total_usage))
+        return rv
+
     url = DEEPSEEK_URL
     headers = {
         "x-api-key": api_key,
@@ -228,7 +245,7 @@ def execute_review(
             "messages": compacted,
             "tools": tools,
             "stream": False,
-            "max_tokens": MAX_TOKENS,
+            "max_tokens": MAX_REVIEW_TOKENS,
         }
 
         _emit("sending", iteration=iteration + 1,
@@ -257,22 +274,12 @@ def execute_review(
             time.sleep(0.6)
 
         if msg.get("stop_reason") != "tool_use":
-            result = {
-                "reviews": list(reviews.values()),
-                "parse_error": len(reviews) == 0,
-                "usage": total_usage,
-            }
-            return result
+            return _make_result(msg)
 
         # Extract tool_use blocks, split into textbook and review calls
         tool_calls = [c for c in msg.get("content", []) if c.get("type") == "tool_use"]
         if not tool_calls:
-            result = {
-                "reviews": list(reviews.values()),
-                "parse_error": len(reviews) == 0,
-                "usage": total_usage,
-            }
-            return result
+            return _make_result(msg)
 
         textbook_calls = [tc for tc in tool_calls if tc.get("name") in ("show_toc", "get_page")]
         review_calls = [tc for tc in tool_calls if tc.get("name") == "submit_review"]
@@ -291,9 +298,4 @@ def execute_review(
         messages.append({"role": "user", "content": tool_results})
 
     # Ran out of iterations — return whatever reviews were collected
-    result = {
-        "reviews": list(reviews.values()),
-        "parse_error": len(reviews) == 0,
-        "usage": total_usage,
-    }
-    return result
+    return _make_result(msg)
