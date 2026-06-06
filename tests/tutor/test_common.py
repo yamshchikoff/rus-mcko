@@ -59,6 +59,65 @@ class TestMakeTools:
         assert page_tool["input_schema"]["required"] == ["part", "page"]
 
 
+# ── make_tools (review mode) ──────────────────────────────────────────────────
+
+
+class TestMakeReviewTools:
+    def test_review_mode_adds_submit_review_tool(self):
+        """make_tools(review_mode=True) returns 3 tools (show_toc, get_page, submit_review)."""
+        from src.tutor.common import make_tools
+        tools = make_tools(review_mode=True)
+        assert len(tools) == 3
+
+    def test_default_mode_still_two_tools(self):
+        """make_tools() without args still returns exactly 2 tools."""
+        from src.tutor.common import make_tools
+        tools = make_tools()
+        assert len(tools) == 2
+
+    def test_submit_review_tool_name(self):
+        from src.tutor.common import make_tools
+        tools = make_tools(review_mode=True)
+        names = [t["name"] for t in tools]
+        assert "submit_review" in names
+
+    def test_submit_review_has_description(self):
+        from src.tutor.common import make_tools
+        tools = make_tools(review_mode=True)
+        sr = next(t for t in tools if t["name"] == "submit_review")
+        assert isinstance(sr["description"], str)
+        assert len(sr["description"]) > 10
+
+    def test_submit_review_schema_required_fields(self):
+        from src.tutor.common import make_tools
+        tools = make_tools(review_mode=True)
+        sr = next(t for t in tools if t["name"] == "submit_review")
+        req = sr["input_schema"]["required"]
+        assert "issue" in req
+        assert "score" in req
+        assert "max_score" in req
+        assert "strengths" in req
+        assert "weaknesses" in req
+        assert "recommendation" in req
+
+    def test_submit_review_schema_types(self):
+        from src.tutor.common import make_tools
+        tools = make_tools(review_mode=True)
+        sr = next(t for t in tools if t["name"] == "submit_review")
+        props = sr["input_schema"]["properties"]
+        assert props["issue"]["type"] == "integer"
+        assert props["score"]["type"] == "integer"
+        assert props["max_score"]["type"] == "integer"
+        assert props["strengths"]["type"] == "string"
+        assert props["weaknesses"]["type"] == "string"
+        assert props["recommendation"]["type"] == "string"
+        assert props["textbook_refs"]["type"] == "array"
+
+    def test_max_review_tool_iterations_exists(self):
+        from src.tutor.common import MAX_REVIEW_TOOL_ITERATIONS
+        assert MAX_REVIEW_TOOL_ITERATIONS > 0
+
+
 # ── execute_tools ──────────────────────────────────────────────────────────────
 
 
