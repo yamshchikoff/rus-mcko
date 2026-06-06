@@ -272,8 +272,8 @@ function handleChatFile(event) {
           alert('Сообщение ' + (i + 1) + ' имеет неверный формат.');
           return;
         }
-        if (m.role !== 'user' && m.role !== 'assistant') {
-          alert('Сообщение ' + (i + 1) + ': роль должна быть user или assistant.');
+        if (m.role !== 'user' && m.role !== 'assistant' && m.role !== 'system') {
+          alert('Сообщение ' + (i + 1) + ': роль должна быть user, assistant или system.');
           return;
         }
       }
@@ -454,8 +454,8 @@ async function requestAIReview(vNum) {
 
 async function notifyModelOfReview(vNum) {
   const notification = {
-    role: 'user',
-    content: `[Система] Ученик только что завершил вариант ${vNum}. Результаты проверки записаны в матрицу прогресса (см. системный промпт выше). Найди в матрице прогресса запись с самой свежей датой завершения и баллами по темам К1–К7. Проанализируй прогресс ученика: какие темы идут хорошо, над какими нужно поработать. Сообщи ученику, что результаты его работы готовы, и дай краткий ободряющий комментарий о его прогрессе.`,
+    role: 'system',
+    content: `Ученик только что завершил вариант ${vNum}. Результаты проверки записаны в матрицу прогресса (см. системный промпт выше). Найди в матрице прогресса запись с самой свежей датой завершения и баллами по темам К1–К7. Проанализируй прогресс ученика: какие темы идут хорошо, над какими нужно поработать. Сообщи ученику, что результаты его работы готовы, и дай краткий ободряющий комментарий о его прогрессе.`,
   };
 
   // Push notification to history before fetch so the model sees it
@@ -734,14 +734,18 @@ function buildTutorContext() {
 
 function renderChatMessage(msg) {
   const div = document.createElement('div');
-  div.className = 'chat-msg ' + msg.role;
-  if (msg.role === 'assistant') {
+  if (msg.role === 'system') {
+    div.className = 'chat-msg system-msg';
+    div.textContent = msg.content;
+  } else if (msg.role === 'assistant') {
+    div.className = 'chat-msg assistant';
     if (typeof marked !== 'undefined') {
       div.innerHTML = marked.parse(msg.content);
     } else {
       div.textContent = msg.content;
     }
   } else {
+    div.className = 'chat-msg user';
     div.textContent = msg.content;
   }
   return div;
