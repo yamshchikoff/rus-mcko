@@ -1,7 +1,6 @@
 """Tests for src.tutor.review."""
 
 import json
-import re
 import threading
 import urllib.request
 import urllib.error
