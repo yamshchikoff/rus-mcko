@@ -387,21 +387,14 @@ async function requestAIReview(vNum) {
             es.close();
             const data = status;
             if (status.usage) updateTokenBar('✓ проверено', status.usage);
-            if (data.parse_error) {
-              const rawReview = [{
-                issue: 0,
-                score: 0,
-                max_score: 0,
-                strengths: '',
-                weaknesses: '',
-                recommendation: 'Модель не смогла вернуть структурированную проверку. Вот её ответ:\n\n' + (data.raw_text || ''),
-                textbook_refs: [],
-              }];
-              saveReviews(vNum, rawReview);
+            const reviews = data.reviews || [];
+            if (reviews.length === 0) {
+              saveReviews(vNum, []);  // clear stale reviews
+              showReviewError('Модель не смогла провести структурированную проверку. Попробуй ещё раз.');
             } else {
-              saveReviews(vNum, data.reviews || []);
+              saveReviews(vNum, reviews);
               const aiScores = {};
-              (data.reviews || []).forEach(r => {
+              reviews.forEach(r => {
                 if (r.issue >= 1 && r.issue <= 7) {
                   aiScores[r.issue] = r.score;
                 }
@@ -410,10 +403,10 @@ async function requestAIReview(vNum) {
                 markVariantCompleted(vNum, aiScores);
                 renderProgressTable();
               }
+              renderReviewBlocks(vNum);
+              notifyModelOfReview(vNum).catch(e => console.warn('notifyModelOfReview failed:', e));
             }
-            renderReviewBlocks(vNum);
             resolve();
-            notifyModelOfReview(vNum).catch(e => console.warn('notifyModelOfReview failed:', e));
           }
 
           if (status.step === 'error') {
@@ -628,19 +621,6 @@ function renderReviewBlocks(vNum) {
   const reviews = loadReviews(vNum);
 
   if (reviews.length === 0) return;
-
-  // Handle parse_error fallback (single raw-text review with issue=0)
-  if (reviews.length === 1 && reviews[0].issue === 0) {
-    for (let issue = 1; issue <= 7; issue++) {
-      const el = document.getElementById(`review-${vNum}-${issue}`);
-      if (el) {
-        el.style.display = 'block';
-        el.className = 'review-error';
-        el.textContent = reviews[0].recommendation;
-      }
-    }
-    return;
-  }
 
   reviews.forEach(r => {
     const el = document.getElementById(`review-${vNum}-${r.issue}`);

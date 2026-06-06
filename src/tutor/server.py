@@ -365,7 +365,6 @@ class TutorHandler(BaseHTTPRequestHandler):
                 on_status({
                     "step": "done",
                     "reviews": result.get("reviews", []),
-                    "parse_error": result.get("parse_error", False),
                     "usage": result.get("usage", {}),
                 })
             except requests.HTTPError as e:

@@ -14,7 +14,6 @@ import requests as real_requests
 from src.tutor.review import (
     REVIEW_SYSTEM_PROMPT,
     build_review_messages,
-    parse_review_response,
     execute_review,
 )
 
@@ -150,8 +149,7 @@ class TestReviewSystemPrompt:
 
     def test_no_json_format_instructions(self):
         prompt = REVIEW_SYSTEM_PROMPT
-        assert "```json" not in prompt
-        assert "строго json" not in prompt.lower()
+        assert "json" not in prompt.lower()
 
     def test_contains_scoring_instructions(self):
         prompt = REVIEW_SYSTEM_PROMPT.lower()
@@ -221,113 +219,30 @@ class TestBuildReviewMessages:
         assert "раскрывая" in content
 
 
-# ── parse_review_response ───────────────────────────────────────────────────
-
-
-class TestParseReviewResponse:
-    def test_parses_valid_json(self):
-        valid = json.dumps({"reviews": [{"issue": 1, "score": 3, "max_score": 4, "strengths": "ok", "weaknesses": "", "recommendation": ""}]})
-        result = parse_review_response(valid)
-        assert not result.get("parse_error")
-        assert len(result["reviews"]) == 1
-        assert result["reviews"][0]["score"] == 3
-
-    def test_parses_json_in_code_fence(self):
-        wrapped = 'Вот результаты проверки:\n```json\n{"reviews": [{"issue": 1, "score": 2, "max_score": 4, "strengths": "Молодец", "weaknesses": "Ошибки", "recommendation": "Повтори §5"}]}\n```\nНадеюсь, понятно.'
-        result = parse_review_response(wrapped)
-        assert not result.get("parse_error")
-        assert len(result["reviews"]) == 1
-        assert result["reviews"][0]["issue"] == 1
-
-    def test_parses_json_amidst_text(self):
-        text = 'Разбор задания:\n{"reviews": [{"issue": 1, "score": 1, "max_score": 3, "strengths": "", "weaknesses": "", "recommendation": ""}]}\nВот так.'
-        result = parse_review_response(text)
-        assert not result.get("parse_error")
-        assert len(result["reviews"]) == 1
-
-    def test_handles_invalid_json(self):
-        result = parse_review_response("Это не JSON, просто текст ответа модели.")
-        assert result.get("parse_error")
-
-    def test_handles_missing_reviews_key(self):
-        result = parse_review_response('{"something": "else"}')
-        assert result.get("parse_error")
-
-    def test_fills_defaults_for_missing_fields(self):
-        minimal = '{"reviews": [{"issue": 1, "score": 2, "max_score": 5}]}'
-        result = parse_review_response(minimal)
-        r = result["reviews"][0]
-        assert r["strengths"] == ""
-        assert r["weaknesses"] == ""
-        assert r["recommendation"] == ""
-        assert r["textbook_refs"] == []
-
-    def test_validates_and_clamps_scores(self):
-        data = '{"reviews": [{"issue": 1, "score": 10, "max_score": 4, "strengths": "", "weaknesses": "", "recommendation": ""}]}'
-        result = parse_review_response(data)
-        r = result["reviews"][0]
-        assert r["max_score"] >= r["score"]
-
-    def test_clamping_skipped_when_max_score_missing(self):
-        data = '{"reviews": [{"issue": 1, "score": 3, "strengths": "", "weaknesses": "", "recommendation": ""}]}'
-        result = parse_review_response(data)
-        r = result["reviews"][0]
-        assert r["score"] == 3
-
-    def test_handles_partial_reviews(self):
-        data = json.dumps({"reviews": [
-            {"issue": 1, "score": 3, "max_score": 4, "strengths": "", "weaknesses": "", "recommendation": ""},
-            {"issue": 3, "score": 2, "max_score": 5, "strengths": "", "weaknesses": "", "recommendation": ""},
-        ]})
-        result = parse_review_response(data)
-        assert len(result["reviews"]) == 2
-        issues = {r["issue"] for r in result["reviews"]}
-        assert issues == {1, 3}
-
-    def test_handles_empty_text(self):
-        result = parse_review_response("")
-        assert result.get("parse_error")
-
-    def test_preserves_textbook_refs(self):
-        data = json.dumps({"reviews": [{
-            "issue": 1, "score": 3, "max_score": 4,
-            "strengths": "ok", "weaknesses": "", "recommendation": "",
-            "textbook_refs": [
-                {"paragraph": "§ 12", "part": 1, "page": 34, "description": "Чередование гласных"},
-                {"paragraph": "§ 24", "part": 1, "page": 61, "description": "Причастный оборот"},
-            ]
-        }]})
-        result = parse_review_response(data)
-        refs = result["reviews"][0]["textbook_refs"]
-        assert len(refs) == 2
-        assert refs[0]["paragraph"] == "§ 12"
-
-
 # ── execute_review ───────────────────────────────────────────────────────────
 
 
 class TestExecuteReview:
-    def test_direct_json_response(self):
+    def test_text_response_without_submit_tool_yields_empty_reviews(self):
+        """Model returned text without using submit_review — reviews empty."""
         tb = dummy_textbook_with_index()
         mock_resp = MagicMock()
         mock_resp.json.return_value = {
             "id": "msg_1",
             "type": "message",
             "role": "assistant",
-            "content": [{"type": "text", "text": json.dumps({"reviews": [
-                {"issue": 1, "score": 3, "max_score": 4, "strengths": "ok", "weaknesses": "", "recommendation": ""}
-            ]})}],
+            "content": [{"type": "text", "text": "Все задания проверены, вот результаты..."}],
             "stop_reason": "end_turn",
         }
 
         with patch("src.tutor.review.requests.post", return_value=mock_resp):
             result = execute_review("sk-test", sample_tasks(1), 1, tb)
 
-        assert not result.get("parse_error")
-        assert len(result["reviews"]) == 1
-        assert result["reviews"][0]["issue"] == 1
+        assert result.get("parse_error") is True
+        assert len(result["reviews"]) == 0
 
-    def test_with_tool_use(self):
+    def test_textbook_tool_without_submit_review_yields_empty(self):
+        """Model used show_toc but never submit_review — reviews empty."""
         tb = dummy_textbook_with_index()
 
         call1 = MagicMock()
@@ -344,17 +259,15 @@ class TestExecuteReview:
             "id": "msg_2",
             "type": "message",
             "role": "assistant",
-            "content": [{"type": "text", "text": json.dumps({"reviews": [
-                {"issue": 1, "score": 2, "max_score": 3, "strengths": "ok", "weaknesses": "", "recommendation": ""}
-            ]})}],
+            "content": [{"type": "text", "text": "Я проанализировал учебник."}],
             "stop_reason": "end_turn",
         }
 
         with patch("src.tutor.review.requests.post", side_effect=[call1, call2]):
             result = execute_review("sk-test", sample_tasks(1), 1, tb)
 
-        assert not result.get("parse_error")
-        assert len(result["reviews"]) == 1
+        assert result.get("parse_error") is True
+        assert len(result["reviews"]) == 0
 
     def test_max_iterations_prevents_loop(self):
         tb = dummy_textbook_with_index()
@@ -371,8 +284,10 @@ class TestExecuteReview:
         with patch("src.tutor.review.requests.post", return_value=always_tool):
             result = execute_review("sk-test", sample_tasks(1), 1, tb, max_iterations=2)
 
-        # Should return parse_error after max iterations (no text to parse)
+        # Should return empty reviews after max iterations (no submit_review called)
         assert result is not None
+        assert result.get("parse_error") is True
+        assert len(result["reviews"]) == 0
 
     def test_compaction_in_loop(self):
         tb = dummy_textbook_with_index()
@@ -549,25 +464,23 @@ class TestExecuteReviewWithSubmitReview:
         assert result["reviews"][0]["score"] == 3
         assert result["reviews"][0]["strengths"] == "revised"
 
-    def test_fallback_json_parsing_when_no_submit_tool_used(self):
+    def test_no_submit_tool_returns_empty_reviews(self):
+        """Without submit_review tool calls, reviews come back empty."""
         tb = dummy_textbook_with_index()
         mock_resp = MagicMock()
         mock_resp.json.return_value = {
             "id": "msg_1",
             "type": "message",
             "role": "assistant",
-            "content": [{"type": "text", "text": json.dumps({"reviews": [
-                {"issue": 1, "score": 3, "max_score": 4, "strengths": "ok", "weaknesses": "", "recommendation": ""}
-            ]})}],
+            "content": [{"type": "text", "text": "Проверил все задания устно."}],
             "stop_reason": "end_turn",
         }
 
         with patch("src.tutor.review.requests.post", return_value=mock_resp):
             result = execute_review("sk-test", sample_tasks(1), 1, tb)
 
-        assert not result.get("parse_error")
-        assert len(result["reviews"]) == 1
-        assert result["reviews"][0]["issue"] == 1
+        assert result.get("parse_error") is True
+        assert len(result["reviews"]) == 0
 
     def test_mixed_tool_calls_in_single_turn(self):
         tb = dummy_textbook_with_index()

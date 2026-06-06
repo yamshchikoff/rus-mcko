@@ -77,8 +77,6 @@ REVIEW_SYSTEM_PROMPT = """Ты — ИИ-репетитор по русскому
    - Оцени ответ строго по критериям из `criteria_html`.
    - Вызови `submit_review`, чтобы записать результат проверки. Один вызов — одно задание.
 3. После того как все задания проверены и записаны — твоя работа завершена. Не пиши итоговый текст.
-
-Не возвращай JSON с результатами всех проверок в конце — каждая проверка записывается отдельным вызовом `submit_review`.
 """
 
 
@@ -172,59 +170,6 @@ def build_review_messages(tasks: list[dict], variant_num: int) -> list[dict]:
     return [{"role": "user", "content": "\n".join(lines)}]
 
 
-# ── Response parsing ─────────────────────────────────────────────────────────
-
-
-def parse_review_response(text: str) -> dict:
-    """Extract and validate the JSON review from model output.
-
-    Strategies, tried in order:
-    1. Find ```json ... ``` code fence, parse content.
-    2. Find outermost {...} in text, parse it.
-    3. Parse entire text as JSON.
-
-    Returns ``{"reviews": [...], "parse_error": False}`` on success,
-    or ``{"reviews": [], "parse_error": True, "raw_text": "..."}`` on failure.
-    """
-    if not text or not text.strip():
-        return {"reviews": [], "parse_error": True, "raw_text": text}
-
-    candidates = []
-
-    # Strategy 1: code fence
-    fence_match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text)
-    if fence_match:
-        candidates.append(fence_match.group(1).strip())
-
-    # Strategy 2: outermost braces
-    brace_match = re.search(r"\{[\s\S]*\}", text)
-    if brace_match:
-        candidates.append(brace_match.group(0).strip())
-
-    # Strategy 3: entire text
-    candidates.append(text.strip())
-
-    for candidate in candidates:
-        try:
-            data = json.loads(candidate)
-            if isinstance(data, dict) and "reviews" in data:
-                for r in data["reviews"]:
-                    r.setdefault("strengths", "")
-                    r.setdefault("weaknesses", "")
-                    r.setdefault("recommendation", "")
-                    r.setdefault("textbook_refs", [])
-                    # Clamp score to valid range
-                    max_s = r.get("max_score", 0)
-                    if max_s > 0 and r.get("score", 0) > max_s:
-                        r["score"] = max_s
-                    if r.get("score", 0) < 0:
-                        r["score"] = 0
-                return {"reviews": data["reviews"], "parse_error": False}
-        except (json.JSONDecodeError, TypeError):
-            continue
-
-    return {"reviews": [], "parse_error": True, "raw_text": text}
-
 
 def execute_review(
     api_key: str,
@@ -238,14 +183,15 @@ def execute_review(
     """Send tasks to DeepSeek, handling tool-use callbacks, return parsed review.
 
     Reviews are collected atomically via ``submit_review`` tool calls.
-    Falls back to JSON text parsing if the model never uses ``submit_review``.
+    If the model never uses ``submit_review``, returns empty reviews with
+    ``parse_error: True``.
 
     Args:
         on_status: Optional callback receiving ``{"step": "...", ...}`` dicts.
-                   Steps: ``submitted``, ``processing``, ``tool``, ``parsing``,
+                   Steps: ``submitted``, ``processing``, ``tool``,
                    ``done``, ``error``.
 
-    Returns a dict with ``reviews`` array and optional ``parse_error`` flag.
+    Returns a dict with ``reviews`` array and ``parse_error`` flag.
     """
     def _emit(step, **kwargs):
         if on_status:
@@ -311,26 +257,21 @@ def execute_review(
             time.sleep(0.6)
 
         if msg.get("stop_reason") != "tool_use":
-            # Model finished — return tool-collected reviews or fallback to text parsing
-            if reviews:
-                result = {"reviews": list(reviews.values()), "parse_error": False}
-            else:
-                _emit("parsing", usage=dict(total_usage))
-                text_blocks = [c.get("text", "") for c in msg.get("content", []) if c.get("type") == "text"]
-                result = parse_review_response("\n".join(text_blocks))
-            result["usage"] = total_usage
+            result = {
+                "reviews": list(reviews.values()),
+                "parse_error": len(reviews) == 0,
+                "usage": total_usage,
+            }
             return result
 
         # Extract tool_use blocks, split into textbook and review calls
         tool_calls = [c for c in msg.get("content", []) if c.get("type") == "tool_use"]
         if not tool_calls:
-            if reviews:
-                result = {"reviews": list(reviews.values()), "parse_error": False}
-            else:
-                _emit("parsing", usage=dict(total_usage))
-                text_blocks = [c.get("text", "") for c in msg.get("content", []) if c.get("type") == "text"]
-                result = parse_review_response("\n".join(text_blocks))
-            result["usage"] = total_usage
+            result = {
+                "reviews": list(reviews.values()),
+                "parse_error": len(reviews) == 0,
+                "usage": total_usage,
+            }
             return result
 
         textbook_calls = [tc for tc in tool_calls if tc.get("name") in ("show_toc", "get_page")]
@@ -349,12 +290,10 @@ def execute_review(
         messages.append({"role": "assistant", "content": msg.get("content", [])})
         messages.append({"role": "user", "content": tool_results})
 
-    # Ran out of iterations — return collected reviews or fallback to text parsing
-    if reviews:
-        result = {"reviews": list(reviews.values()), "parse_error": False}
-    else:
-        _emit("parsing", usage=dict(total_usage))
-        text_blocks = [c.get("text", "") for c in msg.get("content", []) if c.get("type") == "text"]
-        result = parse_review_response("\n".join(text_blocks))
-    result["usage"] = total_usage
+    # Ran out of iterations — return whatever reviews were collected
+    result = {
+        "reviews": list(reviews.values()),
+        "parse_error": len(reviews) == 0,
+        "usage": total_usage,
+    }
     return result
