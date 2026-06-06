@@ -189,7 +189,7 @@ class TestToolUseLoop:
         }
 
         with patch("src.tutor.server.requests.post", return_value=mock_response):
-            result = run_tool_use_loop(
+            result, _usage = run_tool_use_loop(
                 "sk-test",
                 [{"role": "user", "content": "Привет!"}],
                 make_tools(),
@@ -221,7 +221,7 @@ class TestToolUseLoop:
         }
 
         with patch("src.tutor.server.requests.post", side_effect=[call1, call2]):
-            result = run_tool_use_loop(
+            result, _usage = run_tool_use_loop(
                 "sk-test",
                 [{"role": "user", "content": "Что в учебнике?"}],
                 make_tools(),
@@ -243,7 +243,7 @@ class TestToolUseLoop:
         }
 
         with patch("src.tutor.server.requests.post", return_value=always_tool):
-            result = run_tool_use_loop(
+            result, _usage = run_tool_use_loop(
                 "sk-test",
                 [{"role": "user", "content": "?"}],
                 make_tools(),
@@ -279,7 +279,7 @@ class TestCompactionInLoop:
                    return_value=messages[:10]):
             with patch("src.tutor.server.requests.post",
                        return_value=mock_response) as mock_post:
-                result = run_tool_use_loop("sk-test", messages, make_tools(), tb,
+                result, _usage = run_tool_use_loop("sk-test", messages, make_tools(), tb,
                                            max_iterations=1)
 
         # Verify compaction happened: the sent messages should be fewer than original

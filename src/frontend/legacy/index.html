@@ -588,6 +588,10 @@ function appendReviewLog(status) {
     if (name === 'get_page') {
       const inp = status.input || {};
       msg = 'Учебник: часть ' + (inp.part || '?') + ', стр. ' + (inp.page || '?');
+    } else if (name === 'submit_review') {
+      const inp = status.input || {};
+      msg = 'Проверено задание К' + (inp.issue || '?') + ': '
+          + (inp.score || '?') + '/' + (inp.max_score || '?') + ' баллов';
     } else if (name === 'show_toc') {
       msg = 'Просматриваю оглавление';
     } else {
