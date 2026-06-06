@@ -726,10 +726,10 @@ class TestPluralizeScore:
 
 class TestTimeoutConsistency:
     def test_backend_timeout_within_bounds(self):
-        """Backend worst-case: MAX_TOOL_ITERATIONS * 60s timeout should be < 600s."""
-        from src.tutor.review import MAX_TOOL_ITERATIONS
+        """Backend worst-case: MAX_REVIEW_TOOL_ITERATIONS * 60s timeout should be <= 600s."""
+        from src.tutor.review import MAX_REVIEW_TOOL_ITERATIONS
         per_request_timeout = 60  # hardcoded in execute_review requests.post(..., timeout=60)
-        worst_case = MAX_TOOL_ITERATIONS * per_request_timeout
+        worst_case = MAX_REVIEW_TOOL_ITERATIONS * per_request_timeout
         assert worst_case <= 600, (
             f"Backend worst-case timeout {worst_case}s exceeds 600s"
         )

@@ -12,7 +12,7 @@ ANTHROPIC_VERSION = "2023-06-01"
 MODEL = "deepseek-v4-pro"
 MAX_TOKENS = 4096
 MAX_TOOL_ITERATIONS = 5
-MAX_REVIEW_TOOL_ITERATIONS = 15
+MAX_REVIEW_TOOL_ITERATIONS = 10
 
 # ── Tool definitions ──────────────────────────────────────────────────────────
 
