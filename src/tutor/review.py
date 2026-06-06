@@ -16,8 +16,7 @@ import requests
 
 from src.tutor.compaction import compact_history
 from src.tutor.common import (
-    DEEPSEEK_URL, ANTHROPIC_VERSION, MODEL, MAX_REVIEW_TOKENS,
-    MAX_TOOL_ITERATIONS, MAX_REVIEW_TOOL_ITERATIONS,
+    DEEPSEEK_URL, ANTHROPIC_VERSION, MODEL,
     make_tools, execute_tools,
 )
 
@@ -177,19 +176,15 @@ def execute_review(
     variant_num: int,
     textbook: dict,
     progress_context: str = "",
-    max_iterations: int = MAX_REVIEW_TOOL_ITERATIONS,
     on_status: callable = None,
 ) -> dict:
     """Send tasks to DeepSeek, handling tool-use callbacks, return parsed review.
 
     Reviews are collected atomically via ``submit_review`` tool calls.
-    If the model never uses ``submit_review``, returns empty reviews with
-    ``parse_error: True``.
+    Loops until the model returns ``end_turn`` (no iteration cap).
 
     Args:
         on_status: Optional callback receiving ``{"step": "...", ...}`` dicts.
-                   Steps: ``submitted``, ``processing``, ``tool``,
-                   ``done``, ``error``.
 
     Returns a dict with ``reviews`` array and ``parse_error`` flag.
     """
@@ -212,7 +207,7 @@ def execute_review(
                   stop_reason=last_msg.get("stop_reason", "unknown"),
                   content_types=[c.get("type") for c in last_msg.get("content", [])],
                   text_sample=sample,
-                  iteration=iteration + 1,
+                  iteration=iteration,
                   usage=dict(total_usage))
         return rv
 
@@ -234,8 +229,10 @@ def execute_review(
     total_usage = {"input_tokens": 0, "output_tokens": 0}
     _emit("submitted", task_count=len(tasks), usage=dict(total_usage))
 
-    for iteration in range(max_iterations):
-        _emit("processing", iteration=iteration + 1, usage=dict(total_usage))
+    iteration = 0
+    while True:
+        iteration += 1
+        _emit("processing", iteration=iteration, usage=dict(total_usage))
 
         compacted = compact_history(messages)
 
@@ -245,10 +242,10 @@ def execute_review(
             "messages": compacted,
             "tools": tools,
             "stream": False,
-            "max_tokens": MAX_REVIEW_TOKENS,
+            "max_tokens": 32768,
         }
 
-        _emit("sending", iteration=iteration + 1,
+        _emit("sending", iteration=iteration,
               est_input=round(len(json.dumps(body, ensure_ascii=False)) / 3.5),
               usage=dict(total_usage))
         try:
@@ -264,7 +261,7 @@ def execute_review(
         iteration_usage = msg.get("usage", {})
         total_usage["input_tokens"] += iteration_usage.get("input_tokens", 0)
         total_usage["output_tokens"] += iteration_usage.get("output_tokens", 0)
-        _emit("received", iteration=iteration + 1,
+        _emit("received", iteration=iteration,
               iter_input=iteration_usage.get("input_tokens", 0),
               iter_output=iteration_usage.get("output_tokens", 0),
               usage=dict(total_usage))
@@ -296,6 +293,3 @@ def execute_review(
 
         messages.append({"role": "assistant", "content": msg.get("content", [])})
         messages.append({"role": "user", "content": tool_results})
-
-    # Ran out of iterations — return whatever reviews were collected
-    return _make_result(msg)

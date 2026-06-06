@@ -11,9 +11,7 @@ DEEPSEEK_URL = "https://api.deepseek.com/anthropic/v1/messages"
 ANTHROPIC_VERSION = "2023-06-01"
 MODEL = "deepseek-v4-pro"
 MAX_TOKENS = 4096
-MAX_REVIEW_TOKENS = 8192
 MAX_TOOL_ITERATIONS = 5
-MAX_REVIEW_TOOL_ITERATIONS = 30
 
 # ── Tool definitions ──────────────────────────────────────────────────────────
 

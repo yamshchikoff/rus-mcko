@@ -268,22 +268,30 @@ class TestExecuteReview:
         assert result.get("parse_error") is True
         assert len(result["reviews"]) == 0
 
-    def test_max_iterations_prevents_loop(self):
+    def test_loop_exits_on_end_turn(self):
+        """Loop exits when model returns end_turn (no iteration cap needed)."""
         tb = dummy_textbook_with_index()
 
-        always_tool = MagicMock()
-        always_tool.json.return_value = {
+        call1 = MagicMock()
+        call1.json.return_value = {
             "id": "msg_1",
             "type": "message",
             "role": "assistant",
             "content": [{"type": "tool_use", "name": "show_toc", "input": {}}],
             "stop_reason": "tool_use",
         }
+        call2 = MagicMock()
+        call2.json.return_value = {
+            "id": "msg_2",
+            "type": "message",
+            "role": "assistant",
+            "content": [{"type": "text", "text": "Готово."}],
+            "stop_reason": "end_turn",
+        }
 
-        with patch("src.tutor.review.requests.post", return_value=always_tool):
-            result = execute_review("sk-test", sample_tasks(1), 1, tb, max_iterations=2)
+        with patch("src.tutor.review.requests.post", side_effect=[call1, call2]):
+            result = execute_review("sk-test", sample_tasks(1), 1, tb)
 
-        # Should return empty reviews after max iterations (no submit_review called)
         assert result is not None
         assert result.get("parse_error") is True
         assert len(result["reviews"]) == 0
@@ -655,17 +663,3 @@ class TestPluralizeScore:
         assert pluralize_score_py(112) == "ов"
         assert pluralize_score_py(113) == "ов"
         assert pluralize_score_py(114) == "ов"
-
-
-# ── Timeout consistency ──────────────────────────────────────────────────────
-
-
-class TestTimeoutConsistency:
-    def test_backend_timeout_within_bounds(self):
-        """Backend worst-case: MAX_REVIEW_TOOL_ITERATIONS * 60s timeout should be <= 1800s (30 min)."""
-        from src.tutor.review import MAX_REVIEW_TOOL_ITERATIONS
-        per_request_timeout = 60  # hardcoded in execute_review requests.post(..., timeout=60)
-        worst_case = MAX_REVIEW_TOOL_ITERATIONS * per_request_timeout
-        assert worst_case <= 1800, (
-            f"Backend worst-case timeout {worst_case}s exceeds 1800s"
-        )
