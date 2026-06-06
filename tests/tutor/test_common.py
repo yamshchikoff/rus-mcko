@@ -25,6 +25,10 @@ class TestCommonConstants:
         from src.tutor.common import MAX_TOKENS
         assert MAX_TOKENS > 0
 
+    def test_max_tool_iterations_positive(self):
+        from src.tutor.common import MAX_TOOL_ITERATIONS
+        assert MAX_TOOL_ITERATIONS > 0
+
 
 # ── make_tools ─────────────────────────────────────────────────────────────────
 
