@@ -16,7 +16,8 @@ import requests
 
 from src.tutor.compaction import compact_history
 from src.tutor.common import (
-    DEEPSEEK_URL, ANTHROPIC_VERSION, MODEL, MAX_TOKENS, MAX_TOOL_ITERATIONS,
+    DEEPSEEK_URL, ANTHROPIC_VERSION, MODEL, MAX_TOKENS,
+    MAX_TOOL_ITERATIONS, MAX_REVIEW_TOOL_ITERATIONS,
     make_tools, execute_tools,
 )
 
@@ -66,30 +67,65 @@ REVIEW_SYSTEM_PROMPT = """Ты — ИИ-репетитор по русскому
 - `score` — выставленный тобой балл (целое число от 0 до max_score).
 - `max_score` — максимально возможный балл по критериям (извлеки из criteria_html).
 
-## Формат ответа
+## Порядок работы
 
-Ты должен вернуть **строго JSON** без текста до или после:
+Ты используешь инструмент `submit_review` для записи результата проверки каждого задания.
 
-```json
-{
-  "reviews": [
-    {
-      "issue": 1,
-      "score": 3,
-      "max_score": 4,
-      "strengths": "Верно расставлены знаки препинания в первом и третьем предложениях.",
-      "weaknesses": "Во втором предложении пропущена запятая при обособлении причастного оборота.",
-      "recommendation": "Повтори правило обособления причастных оборотов в § 12 учебника.",
-      "textbook_refs": [
-        {"paragraph": "§ 12", "part": 1, "page": 34, "description": "Причастный оборот"}
-      ]
-    }
-  ]
-}
-```
+1. Прочитай все задания, критерии и ответы ученика.
+2. Для каждого задания (К1–К7):
+   - При необходимости обратись к учебнику через `show_toc()` и `get_page(part, page)`, чтобы уточнить правила.
+   - Оцени ответ строго по критериям из `criteria_html`.
+   - Вызови `submit_review`, чтобы записать результат проверки. Один вызов — одно задание.
+3. После того как все задания проверены и записаны — твоя работа завершена. Не пиши итоговый текст.
 
-Проверь, что в твоём ответе нет текста вне JSON-блока.
+Не возвращай JSON с результатами всех проверок в конце — каждая проверка записывается отдельным вызовом `submit_review`.
 """
+
+
+# ── submit_review tool processing ──────────────────────────────────────────────
+
+REQUIRED_REVIEW_FIELDS = ["issue", "score", "max_score", "strengths", "weaknesses", "recommendation"]
+
+
+def _process_submit_review(tool_call: dict, reviews: dict[int, dict]) -> dict:
+    """Process a submit_review tool call, storing the review in *reviews*.
+
+    Returns a tool_result dict with a confirmation or error message.
+    """
+    inp = tool_call.get("input", {})
+    tool_id = tool_call.get("id", "")
+
+    for field in REQUIRED_REVIEW_FIELDS:
+        if field not in inp:
+            return {
+                "type": "tool_result",
+                "tool_use_id": tool_id,
+                "content": f"[Ошибка] Отсутствует обязательное поле: {field}",
+            }
+
+    issue = inp["issue"]
+    if not isinstance(issue, int) or issue < 1:
+        return {
+            "type": "tool_result",
+            "tool_use_id": tool_id,
+            "content": f"[Ошибка] Некорректный номер задания: {issue}",
+        }
+
+    reviews[issue] = {
+        "issue": issue,
+        "score": inp["score"],
+        "max_score": inp["max_score"],
+        "strengths": inp.get("strengths", ""),
+        "weaknesses": inp.get("weaknesses", ""),
+        "recommendation": inp.get("recommendation", ""),
+        "textbook_refs": inp.get("textbook_refs", []),
+    }
+
+    return {
+        "type": "tool_result",
+        "tool_use_id": tool_id,
+        "content": f"Проверка задания К{issue} записана. Баллы: {inp['score']}/{inp['max_score']}.",
+    }
 
 
 # ── Message building ─────────────────────────────────────────────────────────
@@ -196,10 +232,13 @@ def execute_review(
     variant_num: int,
     textbook: dict,
     progress_context: str = "",
-    max_iterations: int = MAX_TOOL_ITERATIONS,
+    max_iterations: int = MAX_REVIEW_TOOL_ITERATIONS,
     on_status: callable = None,
 ) -> dict:
     """Send tasks to DeepSeek, handling tool-use callbacks, return parsed review.
+
+    Reviews are collected atomically via ``submit_review`` tool calls.
+    Falls back to JSON text parsing if the model never uses ``submit_review``.
 
     Args:
         on_status: Optional callback receiving ``{"step": "...", ...}`` dicts.
@@ -221,7 +260,8 @@ def execute_review(
         "anthropic-version": ANTHROPIC_VERSION,
     }
 
-    tools = make_tools()
+    tools = make_tools(review_mode=True)
+    reviews: dict[int, dict] = {}
 
     system_prompt = REVIEW_SYSTEM_PROMPT
     if progress_context:
@@ -271,40 +311,50 @@ def execute_review(
             time.sleep(0.6)
 
         if msg.get("stop_reason") != "tool_use":
-            _emit("parsing", usage=dict(total_usage))
-            text_blocks = []
-            for c in msg.get("content", []):
-                if c.get("type") == "text":
-                    text_blocks.append(c.get("text", ""))
-            result = parse_review_response("\n".join(text_blocks))
+            # Model finished — return tool-collected reviews or fallback to text parsing
+            if reviews:
+                result = {"reviews": list(reviews.values()), "parse_error": False}
+            else:
+                _emit("parsing", usage=dict(total_usage))
+                text_blocks = [c.get("text", "") for c in msg.get("content", []) if c.get("type") == "text"]
+                result = parse_review_response("\n".join(text_blocks))
             result["usage"] = total_usage
             return result
 
-        # Extract tool_use blocks and execute
+        # Extract tool_use blocks, split into textbook and review calls
         tool_calls = [c for c in msg.get("content", []) if c.get("type") == "tool_use"]
         if not tool_calls:
-            _emit("parsing", usage=dict(total_usage))
-            text_blocks = []
-            for c in msg.get("content", []):
-                if c.get("type") == "text":
-                    text_blocks.append(c.get("text", ""))
-            result = parse_review_response("\n".join(text_blocks))
+            if reviews:
+                result = {"reviews": list(reviews.values()), "parse_error": False}
+            else:
+                _emit("parsing", usage=dict(total_usage))
+                text_blocks = [c.get("text", "") for c in msg.get("content", []) if c.get("type") == "text"]
+                result = parse_review_response("\n".join(text_blocks))
             result["usage"] = total_usage
             return result
 
-        for tc in tool_calls:
-            _emit("tool", name=tc.get("name", "?"), input=tc.get("input", {}), usage=dict(total_usage))
+        textbook_calls = [tc for tc in tool_calls if tc.get("name") in ("show_toc", "get_page")]
+        review_calls = [tc for tc in tool_calls if tc.get("name") == "submit_review"]
 
-        tool_results = execute_tools(tool_calls, textbook)
+        tool_results = []
+
+        for tc in review_calls:
+            _emit("tool", name="submit_review", input=tc.get("input", {}), usage=dict(total_usage))
+            result = _process_submit_review(tc, reviews)
+            tool_results.append(result)
+
+        if textbook_calls:
+            tool_results.extend(execute_tools(textbook_calls, textbook))
+
         messages.append({"role": "assistant", "content": msg.get("content", [])})
         messages.append({"role": "user", "content": tool_results})
 
-    # Ran out of iterations — try to parse whatever we got
-    _emit("parsing", usage=dict(total_usage))
-    text_blocks = []
-    for c in msg.get("content", []):
-        if c.get("type") == "text":
-            text_blocks.append(c.get("text", ""))
-    result = parse_review_response("\n".join(text_blocks))
+    # Ran out of iterations — return collected reviews or fallback to text parsing
+    if reviews:
+        result = {"reviews": list(reviews.values()), "parse_error": False}
+    else:
+        _emit("parsing", usage=dict(total_usage))
+        text_blocks = [c.get("text", "") for c in msg.get("content", []) if c.get("type") == "text"]
+        result = parse_review_response("\n".join(text_blocks))
     result["usage"] = total_usage
     return result

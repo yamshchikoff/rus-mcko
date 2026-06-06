@@ -12,12 +12,13 @@ ANTHROPIC_VERSION = "2023-06-01"
 MODEL = "deepseek-v4-pro"
 MAX_TOKENS = 4096
 MAX_TOOL_ITERATIONS = 5
+MAX_REVIEW_TOOL_ITERATIONS = 15
 
 # ── Tool definitions ──────────────────────────────────────────────────────────
 
 
-def make_tools() -> list[dict]:
-    return [
+def make_tools(review_mode: bool = False) -> list[dict]:
+    tools = [
         {
             "name": "show_toc",
             "description": "Получить полное оглавление учебника «Русский язык. 7 класс» "
@@ -38,6 +39,60 @@ def make_tools() -> list[dict]:
             },
         },
     ]
+
+    if review_mode:
+        tools.append({
+            "name": "submit_review",
+            "description": "Записать результат проверки одного задания. "
+                           "Вызывай этот инструмент для каждого задания (К1–К7) после оценки. "
+                           "Один вызов — одно задание.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "issue": {
+                        "type": "integer",
+                        "description": "Номер задания (1–7)",
+                    },
+                    "score": {
+                        "type": "integer",
+                        "description": "Выставленный балл (0 до max_score)",
+                    },
+                    "max_score": {
+                        "type": "integer",
+                        "description": "Максимально возможный балл по критериям задания",
+                    },
+                    "strengths": {
+                        "type": "string",
+                        "description": "Что в ответе ученика верно и соответствует критериям",
+                    },
+                    "weaknesses": {
+                        "type": "string",
+                        "description": "Какие критерии не выполнены, какие ошибки допущены",
+                    },
+                    "recommendation": {
+                        "type": "string",
+                        "description": "Конкретный совет: какой параграф повторить, на что обратить внимание",
+                    },
+                    "textbook_refs": {
+                        "type": "array",
+                        "description": "Ссылки на параграфы учебника, относящиеся к теме задания",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "paragraph": {"type": "string", "description": "Номер параграфа, например § 12"},
+                                "part": {"type": "integer", "description": "Номер части учебника (1 или 2)"},
+                                "page": {"type": "integer", "description": "Номер PDF-страницы"},
+                                "description": {"type": "string", "description": "О чём параграф"},
+                            },
+                            "required": ["paragraph", "part", "page", "description"],
+                        },
+                    },
+                },
+                "required": ["issue", "score", "max_score", "strengths", "weaknesses", "recommendation"],
+            },
+        })
+
+    return tools
 
 
 # ── Tool execution ────────────────────────────────────────────────────────────
