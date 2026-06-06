@@ -122,6 +122,11 @@ header p { color: var(--muted); margin: 0; }
     text-align: right;
     color: var(--muted);
     white-space: nowrap;
+    padding: 4px 3px 4px 14px;
+}
+
+.timer-table .timer-label:first-child {
+    padding-left: 0;
 }
 
 .timer-table .timer-value {
@@ -129,6 +134,9 @@ header p { color: var(--muted); margin: 0; }
     font-size: 22px;
     font-weight: bold;
     white-space: nowrap;
+    padding: 4px 6px;
+    min-width: 3.2em;
+    text-align: center;
 }
 
 .timer-table .timer-value.warning {
