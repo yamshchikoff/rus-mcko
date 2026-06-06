@@ -361,10 +361,6 @@ async function requestAIReview(vNum) {
     // Phase 2: listen for SSE status events from server (with retry)
     let retries = 0;
     await new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(new Error('Проверка заняла слишком много времени. Попробуй ещё раз.'));
-      }, 420000); // 7 minutes
-
       function connect() {
         let settled = false;
         const es = new EventSource(`/api/review/stream/${request_id}`);
@@ -382,7 +378,6 @@ async function requestAIReview(vNum) {
           }
 
           if (status.step === 'done') {
-            clearTimeout(timeout);
             settled = true;
             es.close();
             const data = status;
@@ -410,7 +405,6 @@ async function requestAIReview(vNum) {
           }
 
           if (status.step === 'error') {
-            clearTimeout(timeout);
             settled = true;
             es.close();
             reject(new Error(status.message || 'Неизвестная ошибка проверки'));
@@ -424,7 +418,6 @@ async function requestAIReview(vNum) {
           if (retries <= 3) {
             setTimeout(connect, Math.pow(2, retries - 1) * 1000); // 1s, 2s, 4s
           } else {
-            clearTimeout(timeout);
             reject(new Error('Потеряна связь с сервером. Попробуй ещё раз.'));
           }
         };
@@ -433,11 +426,7 @@ async function requestAIReview(vNum) {
       connect();
     });
   } catch (e) {
-    if (e.name === 'AbortError') {
-      showReviewError('Проверка заняла слишком много времени. Попробуй ещё раз.');
-    } else {
-      showReviewError('Не удалось проверить работу: ' + e.message);
-    }
+    showReviewError('Не удалось проверить работу: ' + e.message);
   } finally {
     hideReviewLoading();
     isReviewInProgress = false;
