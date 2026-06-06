@@ -162,6 +162,12 @@ header p { color: var(--muted); margin: 0; }
 }
 .timer-btn-finish:hover { background: #ffe0b2; }
 
+.timer-btn-rereview {
+    color: #6a1b9a;
+    border-color: #6a1b9a;
+}
+.timer-btn-rereview:hover { background: #f3e5f5; }
+
 .timer-btn-start {
     background: var(--accent);
     color: #fff;

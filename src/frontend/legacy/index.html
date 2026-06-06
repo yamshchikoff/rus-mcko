@@ -61,6 +61,7 @@
         <button class="timer-btn" id="t-continue" onclick="toggleTimer()" style="display:none">Продолжить</button>
         <button class="timer-btn" id="t-reset" onclick="resetTimer()">Заново</button>
         <button class="timer-btn timer-btn-finish" id="t-finish" onclick="finishWork()">Завершить работу</button>
+        <button class="timer-btn timer-btn-rereview" id="t-rereview" onclick="rereview()">Перепроверить</button>
       </td>
     </tr>
   </table>
@@ -1205,6 +1206,13 @@ function finishWork() {
   if (!currentVariant) return;
   if (isReviewInProgress) return;
   document.getElementById('finish-modal').style.display = 'flex';
+}
+
+function rereview() {
+  if (!currentVariant) return;
+  if (isReviewInProgress) return;
+  isReviewInProgress = true;
+  requestAIReview(currentVariant);
 }
 
 function doFinish() {
