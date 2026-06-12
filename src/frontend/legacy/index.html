@@ -975,12 +975,14 @@ function showVariant(num) {
     html += `<div class="text-block"><h3>Текст 1</h3>${balanceHtml(t1.text_html)}</div>`;
   }
 
+  const k1text = t1 ? t1.text_html || '' : '';
+
   tasks14.forEach(t => {
-    html += renderTask(t, num);
+    html += renderTask(t, num, k1text);
   });
 
   tasks57.forEach(t => {
-    html += renderTask(t, num);
+    html += renderTask(t, num, k1text);
   });
 
   document.getElementById('content').innerHTML = html;
@@ -1004,15 +1006,18 @@ function renderChatHistory() {
   updateTokenBar();
 }
 
-function renderTask(t, vNum) {
+function renderTask(t, vNum, k1text) {
   const cats = ['К1', 'К2', 'К3', 'К4', 'К5', 'К6', 'К7'];
   const cat = cats[t.issue - 1] || '';
   const id = `task-${t.issue}`;
   const taId = `ta-${vNum}-${t.issue}`;
+  const ownText = t.text_html || '';
+  const showOwnText = ownText && t.issue !== 1 && ownText !== (k1text || '');
 
   return `
     <div class="task">
       <div class="task-header">${cat}. ${escHtml(t.category)}</div>
+      ${showOwnText ? `<div class="text-block" style="margin-bottom:10px"><h3>Текст</h3>${balanceHtml(ownText)}</div>` : ''}
       <div class="task-content">${balanceHtml(t.content_html)}</div>
       <textarea id="${taId}" class="task-answer" placeholder="Введите ваш ответ..."></textarea>
       <div id="review-${vNum}-${t.issue}" class="review-block" style="display:none"></div>
