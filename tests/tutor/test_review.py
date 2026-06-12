@@ -26,6 +26,7 @@ def make_task(issue, **overrides):
         "issue": issue,
         "category": f"К{issue}. Тестовая категория",
         "content_html": f"<p>Формулировка задания {issue}</p>",
+        "text_html": "",
         "criteria_html": "<table><tr><td>K1</td><td>Орфография</td><td>4</td></tr></table>",
         "solution_html": f"<p>Правильный ответ {issue}</p>",
         "student_answer": f"Ответ ученика на задание {issue}",
@@ -216,6 +217,19 @@ class TestBuildReviewMessages:
         # Should contain the text without tags
         assert "Спишите" in content
         assert "раскрывая" in content
+
+    def test_includes_text_html_when_present(self):
+        tasks = [make_task(2, text_html="<p>В детстве мы любили забираться на два могучих тополя.</p>")]
+        msgs = build_review_messages(tasks, 1)
+        content = msgs[0]["content"]
+        assert "Опорный текст" in content
+        assert "забираться на два могучих тополя" in content
+
+    def test_no_text_html_when_empty(self):
+        tasks = [make_task(5)]
+        msgs = build_review_messages(tasks, 1)
+        content = msgs[0]["content"]
+        assert "Опорный текст" not in content
 
 
 # ── execute_review ───────────────────────────────────────────────────────────

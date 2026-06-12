@@ -148,9 +148,14 @@ def build_review_messages(tasks: list[dict], variant_num: int) -> list[dict]:
         content_text = _strip_html(t.get("content_html", ""))
         criteria_text = _strip_html(t.get("criteria_html", ""))
         solution_text = _strip_html(t.get("solution_html", ""))
+        text_text = _strip_html(t.get("text_html", ""))
         answer = t.get("student_answer", "").strip()
 
         lines.append(f"### Задание К{issue}. {category}")
+
+        if text_text:
+            lines.append(f"\n**Опорный текст:**\n{text_text}")
+
         lines.append(f"\n**Формулировка:**\n{content_text}")
 
         if criteria_text:
